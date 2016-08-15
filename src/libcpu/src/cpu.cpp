@@ -41,9 +41,6 @@ gCore[3];
 static thread_local cpu::Core *
 tCurrentCore = nullptr;
 
-static thread_local uint32_t
-sSegfaultAddr = 0;
-
 void
 initialise()
 {
@@ -61,50 +58,6 @@ setJitMode(jit_mode mode)
 }
 
 void
-coreExceptionEntry()
-{
-   gSegfaultHandler(sSegfaultAddr);
-   decaf_abort("The CPU segfault handler must never return.");
-}
-
-static platform::ExceptionResumeFunc
-exceptionHandler(platform::Exception *exception)
-{
-   // Only handle AccessViolation exceptions
-   if (exception->type != platform::Exception::AccessViolation) {
-      return platform::UnhandledException;
-   }
-
-   // Only handle exceptions from the CPU cores
-   if (this_core::id() >= 0xFF) {
-      return platform::UnhandledException;
-   }
-
-   // Retreive the exception information
-   auto info = reinterpret_cast<platform::AccessViolationException *>(exception);
-   auto address = info->address;
-
-   // Only handle exceptions within the memory bounds
-   auto memBase = mem::base();
-   if (address != 0 && (address < memBase || address >= memBase + 0x100000000)) {
-      return platform::UnhandledException;
-   }
-
-   sSegfaultAddr = static_cast<uint32_t>(address - memBase);
-   return coreExceptionEntry;
-}
-
-void
-installExceptionHandler()
-{
-   static bool handlerInstalled = false;
-   if (!handlerInstalled) {
-      handlerInstalled = true;
-      platform::installExceptionHandler(exceptionHandler);
-   }
-}
-
-void
 coreEntryPoint(Core *core)
 {
    tCurrentCore = core;
@@ -114,8 +67,6 @@ coreEntryPoint(Core *core)
 void
 start()
 {
-   installExceptionHandler();
-
    gRunning.store(true);
 
    for (auto i = 0; i < 3; ++i) {

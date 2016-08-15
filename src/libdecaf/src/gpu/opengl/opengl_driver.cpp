@@ -264,6 +264,8 @@ GLDriver::decafCopySurface(const pm4::DecafCopySurface &data)
 void
 GLDriver::surfaceSync(const pm4::SurfaceSync &data)
 {
+   return;
+
    auto memStart = data.addr << 8;
    auto memEnd = memStart + (data.size << 8);
 

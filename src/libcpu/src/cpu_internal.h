@@ -17,6 +17,9 @@ gCoreEntryPointHandler;
 extern InterruptHandler
 gInterruptHandler;
 
+extern SegfaultHandler
+gSegfaultHandler;
+
 extern BranchTraceHandler
 gBranchTraceHandler;
 
