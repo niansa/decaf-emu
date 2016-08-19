@@ -104,9 +104,13 @@ getDataFormatGlType(latte::SQ_DATA_FORMAT format)
 bool GLDriver::checkActiveShader()
 {
    auto pgm_start_fs = getRegister<latte::SQ_PGM_START_FS>(latte::Register::SQ_PGM_START_FS);
+   auto pgm_start_es = getRegister<latte::SQ_PGM_START_ES>(latte::Register::SQ_PGM_START_ES);
+   auto pgm_start_gs = getRegister<latte::SQ_PGM_START_GS>(latte::Register::SQ_PGM_START_GS);
    auto pgm_start_vs = getRegister<latte::SQ_PGM_START_VS>(latte::Register::SQ_PGM_START_VS);
    auto pgm_start_ps = getRegister<latte::SQ_PGM_START_PS>(latte::Register::SQ_PGM_START_PS);
    auto pgm_size_fs = getRegister<latte::SQ_PGM_SIZE_FS>(latte::Register::SQ_PGM_SIZE_FS);
+   auto pgm_size_es = getRegister<latte::SQ_PGM_SIZE_ES>(latte::Register::SQ_PGM_SIZE_ES);
+   auto pgm_size_gs = getRegister<latte::SQ_PGM_SIZE_GS>(latte::Register::SQ_PGM_SIZE_GS);
    auto pgm_size_vs = getRegister<latte::SQ_PGM_SIZE_VS>(latte::Register::SQ_PGM_SIZE_VS);
    auto pgm_size_ps = getRegister<latte::SQ_PGM_SIZE_PS>(latte::Register::SQ_PGM_SIZE_PS);
    auto cb_shader_mask = getRegister<latte::CB_SHADER_MASK>(latte::Register::CB_SHADER_MASK);
@@ -116,31 +120,11 @@ bool GLDriver::checkActiveShader()
    auto vgt_strmout_en = getRegister<latte::VGT_STRMOUT_EN>(latte::Register::VGT_STRMOUT_EN);
    auto pa_cl_clip_cntl = getRegister<latte::PA_CL_CLIP_CNTL>(latte::Register::PA_CL_CLIP_CNTL);
    auto vgt_primitive_type = getRegister<latte::VGT_PRIMITIVE_TYPE>(latte::Register::VGT_PRIMITIVE_TYPE);
-   bool isScreenSpace = (vgt_primitive_type.PRIM_TYPE() == latte::VGT_DI_PT_RECTLIST);
+   auto vgt_gs_mode = getRegister<latte::VGT_GS_MODE>(latte::Register::VGT_GS_MODE);
 
-   if (!pgm_start_fs.PGM_START) {
-      gLog->error("Fetch shader was not set");
-      return false;
-   }
-
-   if (!pgm_start_vs.PGM_START) {
-      gLog->error("Vertex shader was not set");
-      return false;
-   }
-
-   if (!vgt_strmout_en.STREAMOUT() && !pgm_start_ps.PGM_START) {
-      gLog->error("Pixel shader was not set (and transform feedback was not enabled)");
-      return false;
-   }
-
-   auto fsPgmAddress = pgm_start_fs.PGM_START << 8;
-   auto vsPgmAddress = pgm_start_vs.PGM_START << 8;
-   auto psPgmAddress = pgm_start_ps.PGM_START << 8;
-   auto fsPgmSize = pgm_size_fs.PGM_SIZE << 3;
-   auto vsPgmSize = pgm_size_vs.PGM_SIZE << 3;
-   auto psPgmSize = pgm_size_ps.PGM_SIZE << 3;
    auto z_order = db_shader_control.Z_ORDER();
    auto early_z = (z_order == latte::DB_EARLY_Z_THEN_LATE_Z || z_order == latte::DB_EARLY_Z_THEN_RE_Z);
+   bool isScreenSpace = (vgt_primitive_type.PRIM_TYPE() == latte::VGT_DI_PT_RECTLIST);
    auto alphaTestFunc = sx_alpha_test_control.ALPHA_FUNC();
 
    if (!sx_alpha_test_control.ALPHA_TEST_ENABLE() || sx_alpha_test_control.ALPHA_TEST_BYPASS()) {
@@ -154,9 +138,62 @@ bool GLDriver::checkActiveShader()
    decaf_check(getRegister<uint32_t>(latte::Register::SQ_PGM_CF_OFFSET_ES) == 0);
    decaf_check(getRegister<uint32_t>(latte::Register::SQ_PGM_CF_OFFSET_FS) == 0);
 
-   auto fsShaderKey = static_cast<uint64_t>(fsPgmAddress) << 32;
-   auto vsShaderKey = static_cast<uint64_t>(vsPgmAddress) << 32;
-   vsShaderKey ^= (isScreenSpace ? 1 : 0) << 31;
+   auto fsPgmAddress = 0;
+   auto vsPgmAddress = 0;
+   auto gsPgmAddress = 0;
+   auto dcPgmAddress = 0;
+   auto psPgmAddress = 0;
+   auto fsPgmSize = 0;
+   auto vsPgmSize = 0;
+   auto gsPgmSize = 0;
+   auto dcPgmSize = 0;
+   auto psPgmSize = 0;
+
+   fsPgmAddress = pgm_start_fs.PGM_START << 8;
+   fsPgmSize = pgm_size_fs.PGM_SIZE << 3;
+
+   if (vgt_gs_mode.MODE() == latte::VGT_GS_ENABLE_MODE::GS_OFF) {
+      // Geometry Shaders are disabled
+
+      vsPgmAddress = pgm_start_vs.PGM_START << 8;
+      vsPgmSize = pgm_size_vs.PGM_SIZE << 3;
+      gsPgmAddress = 0;
+      gsPgmSize = 0;
+      dcPgmAddress = 0;
+      dcPgmSize = 0;
+   } else {
+      // Geometry Shaders are enabled
+
+      vsPgmAddress = pgm_start_es.PGM_START << 8;
+      vsPgmSize = pgm_size_es.PGM_SIZE << 3;
+      gsPgmAddress = pgm_start_gs.PGM_START << 8;
+      gsPgmSize = pgm_size_gs.PGM_SIZE << 3;
+      dcPgmAddress = pgm_start_vs.PGM_START << 8;
+      dcPgmSize = pgm_size_vs.PGM_SIZE << 3;
+   }
+
+   if (!pa_cl_clip_cntl.RASTERISER_DISABLE()) {
+      psPgmAddress = pgm_start_ps.PGM_START << 8;
+      psPgmSize = pgm_size_ps.PGM_SIZE << 3;
+   }
+
+   uint64_t fsShaderKey = 0;
+   uint64_t vsShaderKey = 0;
+   uint64_t gsShaderKey = 0;
+   uint64_t dcShaderKey = 0;
+   uint64_t psShaderKey = 0;
+
+   if (fsPgmAddress) {
+      fsShaderKey = static_cast<uint64_t>(fsPgmAddress) << 32;
+   }
+
+   if (vsPgmAddress) {
+      vsShaderKey = static_cast<uint64_t>(vsPgmAddress) << 32;
+      vsShaderKey ^= (isScreenSpace ? 1 : 0) << 31;
+   }
+
+   // TODO: I don't think this actually affects the shader, and I believe if
+   //   it does affect the shader, GS also will be affected...
    if (vgt_strmout_en.STREAMOUT()) {
       vsShaderKey ^= 1;
       for (auto i = 0u; i < latte::MaxStreamOutBuffers; ++i) {
@@ -164,10 +201,17 @@ bool GLDriver::checkActiveShader()
          vsShaderKey ^= vgt_strmout_vtx_stride << (1 + 7 * i);
       }
    }
-   uint64_t psShaderKey;
-   if (pa_cl_clip_cntl.RASTERISER_DISABLE()) {
-      psShaderKey = 0;
-   } else {
+
+   if (gsPgmAddress) {
+      gsShaderKey = static_cast<uint64_t>(gsPgmAddress) << 32;
+      gsShaderKey ^= vgt_primitive_type.PRIM_TYPE();
+   }
+
+   if (dcPgmAddress) {
+      dcShaderKey = static_cast<uint64_t>(dcPgmAddress) << 32;
+   }
+
+   if (psPgmAddress) {
       psShaderKey = static_cast<uint64_t>(psPgmAddress) << 32;
       psShaderKey ^= static_cast<uint64_t>(alphaTestFunc) << 28;
       psShaderKey ^= static_cast<uint64_t>(early_z) << 27;
@@ -175,15 +219,20 @@ bool GLDriver::checkActiveShader()
       psShaderKey ^= cb_shader_mask.value & 0xFF;
    }
 
+   // We do not currently support data cache shaders...
+   decaf_check(dcPgmAddress == 0);
+
    if (mActiveShader
-    && mActiveShader->fetch && mActiveShader->fetchKey == fsShaderKey
-    && mActiveShader->vertex && mActiveShader->vertexKey == vsShaderKey
-    && mActiveShader->pixel && mActiveShader->pixelKey == psShaderKey) {
+    && mActiveShader->fetchKey == fsShaderKey
+    && mActiveShader->vertexKey == vsShaderKey
+    && mActiveShader->geometryKey == gsShaderKey
+    && mActiveShader->dcacheKey == dcShaderKey
+    && mActiveShader->pixelKey == psShaderKey) {
       // We already have the current shader bound, nothing special to do.
       return true;
    }
 
-   auto shaderKey = ShaderKey { fsShaderKey, vsShaderKey, psShaderKey };
+   auto shaderKey = ShaderKey { fsShaderKey, vsShaderKey, gsShaderKey, dcShaderKey, psShaderKey };
    auto &shader = mShaders[shaderKey];
 
    auto getProgramLog = [](auto program) {
@@ -199,130 +248,184 @@ bool GLDriver::checkActiveShader()
    // Generate shader if needed
    if (!shader.object) {
       // Parse fetch shader if needed
-      auto &fetchShader = mFetchShaders[fsShaderKey];
+      if (fsPgmAddress) {
+         auto &fetchShader = mFetchShaders[fsShaderKey];
 
-      if (!fetchShader.object) {
-         auto aluDivisor0 = getRegister<uint32_t>(latte::Register::VGT_INSTANCE_STEP_RATE_0);
-         auto aluDivisor1 = getRegister<uint32_t>(latte::Register::VGT_INSTANCE_STEP_RATE_1);
+         if (fsPgmAddress && !fetchShader.object) {
+            auto aluDivisor0 = getRegister<uint32_t>(latte::Register::VGT_INSTANCE_STEP_RATE_0);
+            auto aluDivisor1 = getRegister<uint32_t>(latte::Register::VGT_INSTANCE_STEP_RATE_1);
 
-         fetchShader.cpuMemStart = fsPgmAddress;
-         fetchShader.cpuMemEnd = fsPgmAddress + fsPgmSize;
+            fetchShader.cpuMemStart = fsPgmAddress;
+            fetchShader.cpuMemEnd = fsPgmAddress + fsPgmSize;
 
-         dumpRawShader("fetch", fsPgmAddress, fsPgmSize, true);
-         fetchShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(fsPgmAddress), fsPgmSize), true);
+            dumpRawShader("fetch", fsPgmAddress, fsPgmSize, true);
+            fetchShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(fsPgmAddress), fsPgmSize), true);
 
-         if (!parseFetchShader(fetchShader, make_virtual_ptr<void>(fsPgmAddress), fsPgmSize)) {
-            gLog->error("Failed to parse fetch shader");
-            return false;
-         }
+            if (!parseFetchShader(fetchShader, make_virtual_ptr<void>(fsPgmAddress), fsPgmSize)) {
+               gLog->error("Failed to parse fetch shader");
+               gLog->error("Shader Disassembly:\n{}\n", fetchShader.disassembly);
+               return false;
+            }
 
-         // Setup attrib format
-         gl::glCreateVertexArrays(1, &fetchShader.object);
-         if (decaf::config::gpu::debug) {
-            std::string label = fmt::format("fetch shader @ 0x{:08X}", fsPgmAddress);
-            gl::glObjectLabel(gl::GL_VERTEX_ARRAY, fetchShader.object, -1, label.c_str());
-         }
+            // Setup attrib format
+            gl::glCreateVertexArrays(1, &fetchShader.object);
+            if (decaf::config::gpu::debug) {
+               std::string label = fmt::format("fetch shader @ 0x{:08X}", fsPgmAddress);
+               gl::glObjectLabel(gl::GL_VERTEX_ARRAY, fetchShader.object, -1, label.c_str());
+            }
 
-         auto bufferUsed = std::array<bool, latte::MaxAttributes> { false };
-         auto bufferDivisor = std::array<uint32_t, latte::MaxAttributes> { 0 };
+            auto bufferUsed = std::array<bool, latte::MaxAttributes> { false };
+            auto bufferDivisor = std::array<uint32_t, latte::MaxAttributes> { 0 };
 
-         for (auto &attrib : fetchShader.attribs) {
-            auto resourceId = attrib.buffer + latte::SQ_VS_RESOURCE_BASE;
-            if (resourceId >= latte::SQ_VS_ATTRIB_RESOURCE_0 && resourceId < latte::SQ_VS_ATTRIB_RESOURCE_0 + 0x10) {
-               auto attribBufferId = resourceId - latte::SQ_VS_ATTRIB_RESOURCE_0;
+            for (auto &attrib : fetchShader.attribs) {
+               auto resourceId = attrib.buffer + latte::SQ_VS_RESOURCE_BASE;
+               if (resourceId >= latte::SQ_VS_ATTRIB_RESOURCE_0 && resourceId < latte::SQ_VS_ATTRIB_RESOURCE_0 + 0x10) {
+                  auto attribBufferId = resourceId - latte::SQ_VS_ATTRIB_RESOURCE_0;
 
-               auto type = getDataFormatGlType(attrib.format);
-               auto components = getDataFormatComponents(attrib.format);
-               uint32_t divisor = 0;
+                  auto type = getDataFormatGlType(attrib.format);
+                  auto components = getDataFormatComponents(attrib.format);
+                  uint32_t divisor = 0;
 
-               gl::glEnableVertexArrayAttrib(fetchShader.object, attrib.location);
-               gl::glVertexArrayAttribIFormat(fetchShader.object, attrib.location, components, type, attrib.offset);
-               gl::glVertexArrayAttribBinding(fetchShader.object, attrib.location, attribBufferId);
+                  gl::glEnableVertexArrayAttrib(fetchShader.object, attrib.location);
+                  gl::glVertexArrayAttribIFormat(fetchShader.object, attrib.location, components, type, attrib.offset);
+                  gl::glVertexArrayAttribBinding(fetchShader.object, attrib.location, attribBufferId);
 
-               if (attrib.type == latte::SQ_VTX_FETCH_TYPE::SQ_VTX_FETCH_INSTANCE_DATA) {
-                  if (attrib.srcSelX == latte::SQ_SEL_W) {
-                     divisor = 1;
-                  } else if (attrib.srcSelX == latte::SQ_SEL_Y) {
-                     divisor = aluDivisor0;
-                  } else if (attrib.srcSelX == latte::SQ_SEL_Z) {
-                     divisor = aluDivisor1;
-                  } else {
-                     decaf_abort(fmt::format("Unexpected SRC_SEL_X {} for alu divisor", attrib.srcSelX));
+                  if (attrib.type == latte::SQ_VTX_FETCH_TYPE::SQ_VTX_FETCH_INSTANCE_DATA) {
+                     if (attrib.srcSelX == latte::SQ_SEL_W) {
+                        divisor = 1;
+                     } else if (attrib.srcSelX == latte::SQ_SEL_Y) {
+                        divisor = aluDivisor0;
+                     } else if (attrib.srcSelX == latte::SQ_SEL_Z) {
+                        divisor = aluDivisor1;
+                     } else {
+                        decaf_abort(fmt::format("Unexpected SRC_SEL_X {} for alu divisor", attrib.srcSelX));
+                     }
                   }
+
+                  decaf_assert(!bufferUsed[attribBufferId] || bufferDivisor[attribBufferId] == divisor,
+                     "Multiple attributes conflict on buffer divisor mode");
+
+                  bufferUsed[attribBufferId] = true;
+                  bufferDivisor[attribBufferId] = divisor;
+               } else {
+                  decaf_abort("We do not yet support binding of non-attribute buffers");
                }
+            }
 
-               decaf_assert(!bufferUsed[attribBufferId] || bufferDivisor[attribBufferId] == divisor,
-                  "Multiple attributes conflict on buffer divisor mode");
-
-               bufferUsed[attribBufferId] = true;
-               bufferDivisor[attribBufferId] = divisor;
-            } else {
-               decaf_abort("We do not yet support binding of non-attribute buffers");
+            for (auto bufferId = 0; bufferId < latte::MaxAttributes; ++bufferId) {
+               if (bufferUsed[bufferId]) {
+                  gl::glVertexArrayBindingDivisor(fetchShader.object, bufferId, bufferDivisor[bufferId]);
+               }
             }
          }
 
-         for (auto bufferId = 0; bufferId < latte::MaxAttributes; ++bufferId) {
-            if (bufferUsed[bufferId]) {
-               gl::glVertexArrayBindingDivisor(fetchShader.object, bufferId, bufferDivisor[bufferId]);
+         shader.fetch = &fetchShader;
+         shader.fetchKey = fsShaderKey;
+      }
+
+      if (vsPgmAddress) {
+         // Compile vertex shader if needed
+         auto &vertexShader = mVertexShaders[vsShaderKey];
+
+         if (!vertexShader.object) {
+            vertexShader.cpuMemStart = vsPgmAddress;
+            vertexShader.cpuMemEnd = vsPgmAddress + vsPgmSize;
+
+            dumpRawShader("vertex", vsPgmAddress, vsPgmSize);
+            vertexShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(vsPgmAddress), vsPgmSize), true);
+
+            if (!compileVertexShader(vertexShader, *shader.fetch, make_virtual_ptr<uint8_t>(vsPgmAddress), vsPgmSize, isScreenSpace)) {
+               gLog->error("Failed to recompile vertex shader");
+               return false;
+            }
+
+            dumpTranslatedShader("vertex", vsPgmAddress, vertexShader.code);
+
+            // Create OpenGL Shader
+            const gl::GLchar *code[] = { vertexShader.code.c_str() };
+            vertexShader.object = gl::glCreateShaderProgramv(gl::GL_VERTEX_SHADER, 1, code);
+            if (decaf::config::gpu::debug) {
+               std::string label = fmt::format("vertex shader @ 0x{:08X}", vsPgmAddress);
+               gl::glObjectLabel(gl::GL_PROGRAM, vertexShader.object, -1, label.c_str());
+            }
+
+            // Check if shader compiled & linked properly
+            gl::GLint isLinked = 0;
+            gl::glGetProgramiv(vertexShader.object, gl::GL_LINK_STATUS, &isLinked);
+
+            if (!isLinked) {
+               auto log = getProgramLog(vertexShader.object);
+               gLog->error("OpenGL failed to compile vertex shader:\n{}", log);
+               gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
+               gLog->error("Shader Disassembly:\n{}\n", vertexShader.disassembly);
+               gLog->error("Shader Code:\n{}\n", vertexShader.code);
+               return false;
+            }
+
+            // Get uniform locations
+            vertexShader.uniformRegisters = gl::glGetUniformLocation(vertexShader.object, "VR");
+            vertexShader.uniformViewport = gl::glGetUniformLocation(vertexShader.object, "uViewport");
+
+            // Get attribute locations
+            vertexShader.attribLocations.fill(0);
+
+            if (shader.fetch) {
+               for (auto &attrib : shader.fetch->attribs) {
+                  auto name = fmt::format("fs_out_{}", attrib.location);
+                  vertexShader.attribLocations[attrib.location] = gl::glGetAttribLocation(vertexShader.object, name.c_str());
+               }
             }
          }
+
+         shader.vertex = &vertexShader;
+         shader.vertexKey = vsShaderKey;
       }
 
-      shader.fetch = &fetchShader;
-      shader.fetchKey = fsShaderKey;
+      // Compile geometry shader if neded
+      if (gsPgmAddress) {
+         // Compile geometry shader if needed
+         auto &geometryShader = mGeometryShaders[gsShaderKey];
 
-      // Compile vertex shader if needed
-      auto &vertexShader = mVertexShaders[vsShaderKey];
+         if (!geometryShader.object) {
+            geometryShader.cpuMemStart = gsPgmAddress;
+            geometryShader.cpuMemEnd = gsPgmAddress + gsPgmSize;
 
-      if (!vertexShader.object) {
-         vertexShader.cpuMemStart = vsPgmAddress;
-         vertexShader.cpuMemEnd = vsPgmAddress + vsPgmSize;
+            dumpRawShader("geometry", gsPgmAddress, gsPgmSize);
+            geometryShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(gsPgmAddress), gsPgmSize), true);
 
-         dumpRawShader("vertex", vsPgmAddress, vsPgmSize);
+            if (!compileGeometryShader(geometryShader, *shader.vertex, make_virtual_ptr<uint8_t>(gsPgmAddress), gsPgmSize)) {
+               gLog->error("Failed to recompile geometry shader");
+               return false;
+            }
 
-         if (!compileVertexShader(vertexShader, fetchShader, make_virtual_ptr<uint8_t>(vsPgmAddress), vsPgmSize, isScreenSpace)) {
-            gLog->error("Failed to recompile vertex shader");
-            return false;
+            dumpTranslatedShader("geometry", gsPgmAddress, geometryShader.code);
+
+            // Create OpenGL Shader
+            const gl::GLchar *code[] = { geometryShader.code.c_str() };
+            geometryShader.object = gl::glCreateShaderProgramv(gl::GL_GEOMETRY_SHADER, 1, code);
+            if (decaf::config::gpu::debug) {
+               std::string label = fmt::format("geometry shader @ 0x{:08X}", gsPgmAddress);
+               gl::glObjectLabel(gl::GL_PROGRAM, geometryShader.object, -1, label.c_str());
+            }
+
+            // Check if shader compiled & linked properly
+            gl::GLint isLinked = 0;
+            gl::glGetProgramiv(geometryShader.object, gl::GL_LINK_STATUS, &isLinked);
+
+            if (!isLinked) {
+               auto log = getProgramLog(geometryShader.object);
+               gLog->error("OpenGL failed to compile geometry shader:\n{}", log);
+               gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
+               gLog->error("Vertex Disassembly:\n{}\n", shader.vertex ? shader.vertex->disassembly : "");
+               gLog->error("Shader Disassembly:\n{}\n", geometryShader.disassembly);
+               gLog->error("Shader Code:\n{}\n", geometryShader.code);
+               return false;
+            }
          }
 
-         dumpTranslatedShader("vertex", vsPgmAddress, vertexShader.code);
-
-         // Create OpenGL Shader
-         const gl::GLchar *code[] = { vertexShader.code.c_str() };
-         vertexShader.object = gl::glCreateShaderProgramv(gl::GL_VERTEX_SHADER, 1, code);
-         if (decaf::config::gpu::debug) {
-            std::string label = fmt::format("vertex shader @ 0x{:08X}", vsPgmAddress);
-            gl::glObjectLabel(gl::GL_PROGRAM, vertexShader.object, -1, label.c_str());
-         }
-
-         // Check if shader compiled & linked properly
-         gl::GLint isLinked = 0;
-         gl::glGetProgramiv(vertexShader.object, gl::GL_LINK_STATUS, &isLinked);
-
-         if (!isLinked) {
-            auto log = getProgramLog(vertexShader.object);
-            gLog->error("OpenGL failed to compile vertex shader:\n{}", log);
-            gLog->error("Fetch Disassembly:\n{}\n", fetchShader.disassembly);
-            gLog->error("Shader Disassembly:\n{}\n", vertexShader.disassembly);
-            gLog->error("Shader Code:\n{}\n", vertexShader.code);
-            return false;
-         }
-
-         // Get uniform locations
-         vertexShader.uniformRegisters = gl::glGetUniformLocation(vertexShader.object, "VR");
-         vertexShader.uniformViewport = gl::glGetUniformLocation(vertexShader.object, "uViewport");
-
-         // Get attribute locations
-         vertexShader.attribLocations.fill(0);
-
-         for (auto &attrib : fetchShader.attribs) {
-            auto name = fmt::format("fs_out_{}", attrib.location);
-            vertexShader.attribLocations[attrib.location] = gl::glGetAttribLocation(vertexShader.object, name.c_str());
-         }
+         shader.geometry = &geometryShader;
+         shader.geometryKey = gsShaderKey;
       }
-
-      shader.vertex = &vertexShader;
-      shader.vertexKey = vsShaderKey;
 
       if (pa_cl_clip_cntl.RASTERISER_DISABLE()) {
 
@@ -339,8 +442,9 @@ bool GLDriver::checkActiveShader()
             pixelShader.cpuMemEnd = psPgmAddress + psPgmSize;
 
             dumpRawShader("pixel", psPgmAddress, psPgmSize);
+            pixelShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(psPgmAddress), psPgmSize), true);
 
-            if (!compilePixelShader(pixelShader, vertexShader, make_virtual_ptr<uint8_t>(psPgmAddress), psPgmSize)) {
+            if (!compilePixelShader(pixelShader, *shader.vertex, make_virtual_ptr<uint8_t>(psPgmAddress), psPgmSize)) {
                gLog->error("Failed to recompile pixel shader");
                return false;
             }
@@ -362,6 +466,9 @@ bool GLDriver::checkActiveShader()
             if (!isLinked) {
                auto log = getProgramLog(pixelShader.object);
                gLog->error("OpenGL failed to compile pixel shader:\n{}", log);
+               gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
+               gLog->error("Vertex Disassembly:\n{}\n", shader.vertex ? shader.vertex->disassembly : "");
+               gLog->error("Geometry Disassembly:\n{}\n", shader.geometry ? shader.geometry->disassembly : "");
                gLog->error("Shader Disassembly:\n{}\n", pixelShader.disassembly);
                gLog->error("Shader Code:\n{}\n", pixelShader.code);
                return false;
@@ -934,8 +1041,6 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
       shader.uniformBlocksEnabled = true;
    }
 
-   vertex.disassembly = latte::disassemble(gsl::as_span(buffer, size));
-
    if (!glsl2::translate(shader, gsl::as_span(buffer, size))) {
       gLog->error("Failed to decode vertex shader\n{}", vertex.disassembly);
       return false;
@@ -1309,6 +1414,107 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
    return true;
 }
 
+bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &vertex, uint8_t *buffer, size_t size)
+{
+   auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
+   auto vgt_primitive_type = getRegister<latte::VGT_PRIMITIVE_TYPE>(latte::Register::VGT_PRIMITIVE_TYPE);
+   auto vgt_gs_mode = getRegister<latte::VGT_GS_MODE>(latte::Register::VGT_GS_MODE);
+   auto vgt_gs_out_prim_type = getRegister<latte::VGT_GS_OUT_PRIM_TYPE>(latte::Register::VGT_GS_OUT_PRIM_TYPE);
+
+   glsl2::Shader shader;
+   shader.type = glsl2::Shader::GeometryShader;
+
+   // Gather Samplers
+   for (auto i = 0; i < latte::MaxSamplers; ++i) {
+      auto resourceOffset = (latte::SQ_GS_TEX_RESOURCE_0 + i) * 7;
+      auto sq_tex_resource_word0 = getRegister<latte::SQ_TEX_RESOURCE_WORD0_N>(latte::Register::SQ_TEX_RESOURCE_WORD0_0 + 4 * resourceOffset);
+
+      shader.samplerDim[i] = sq_tex_resource_word0.DIM();
+   }
+
+   if (sq_config.DX9_CONSTS()) {
+      shader.uniformRegistersEnabled = true;
+   } else {
+      shader.uniformBlocksEnabled = true;
+   }
+
+   if (!glsl2::translate(shader, gsl::as_span(buffer, size))) {
+      gLog->error("Failed to decode geometry shader\n{}", geometry.disassembly);
+      return false;
+   }
+
+   geometry.usedUniformBlocks = shader.usedUniformBlocks;
+
+   fmt::MemoryWriter out;
+
+   switch (vgt_primitive_type.PRIM_TYPE()) {
+   case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_POINTLIST:
+      out << "layout(points) in;\n";
+      break;
+   case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_LINELIST:
+   case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_LINESTRIP:
+      out << "layout(lines) in;\n";
+      break;
+   case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_TRILIST:
+   case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_TRISTRIP:
+      out << "layout(triangles) in;\n";
+      break;
+   default:
+      decaf_abort(fmt::format("Unexpected GS input primitive type {}", vgt_primitive_type.PRIM_TYPE()));
+   }
+
+   // TODO: Need to handle tesselation here
+   auto maxVertices = 0;
+   switch (vgt_gs_mode.CUT_MODE()) {
+   case latte::GS_CUT_128:
+      maxVertices = 128;
+      break;
+   case latte::GS_CUT_256:
+      maxVertices = 256;
+      break;
+   case latte::GS_CUT_512:
+      maxVertices = 512;
+      break;
+   case latte::GS_CUT_1024:
+      maxVertices = 1024;
+      break;
+   default:
+      decaf_abort(fmt::format("Unexpected GS cut mode {}", vgt_gs_mode.CUT_MODE()));
+   }
+
+   switch (vgt_gs_out_prim_type.PRIM_TYPE()) {
+   case latte::VGT_GS_OUT_PRIMITIVE_TYPE::VGT_GS_OUT_PT_POINTLIST:
+      out << "layout(points, max_vertices=" << maxVertices << ") out;\n";
+      break;
+   case latte::VGT_GS_OUT_PRIMITIVE_TYPE::VGT_GS_OUT_PT_LINESTRIP:
+      out << "layout(lines, max_vertices=" << maxVertices << ") out;\n";
+      break;
+   case latte::VGT_GS_OUT_PRIMITIVE_TYPE::VGT_GS_OUT_PT_TRISTRIP:
+      out << "layout(triangles, max_vertices=" << maxVertices << ") out;\n";
+      break;
+   default:
+      decaf_abort(fmt::format("Unexpected GS output primitive type {}", vgt_gs_out_prim_type.PRIM_TYPE()));
+   }
+
+   out << "\n";
+
+   out << shader.fileHeader;
+
+   out
+      << "void main()\n"
+      << "{\n"
+      << shader.codeHeader;
+
+   out << '\n' << shader.codeBody << '\n';
+
+   out << "}\n";
+
+   out << "/* GEOMETRY SHADER DISASSEMBLY\n" << geometry.disassembly << "\n*/\n";
+
+   geometry.code = out.str();
+   return true;
+}
+
 bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint8_t *buffer, size_t size)
 {
    auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
@@ -1336,8 +1542,6 @@ bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint
    } else {
       shader.uniformBlocksEnabled = true;
    }
-
-   pixel.disassembly = latte::disassemble(gsl::as_span(buffer, size));
 
    if (!glsl2::translate(shader, gsl::as_span(buffer, size))) {
       gLog->error("Failed to decode pixel shader\n{}", pixel.disassembly);

@@ -144,6 +144,34 @@ POP(State &state, const ControlFlowInst &cf)
    insertPop(state, cf.word1.POP_COUNT());
 }
 
+static void
+EMIT_VERTEX(State &state, const ControlFlowInst &cf)
+{
+   insertLineStart(state);
+   state.out << "EmitVertex();";
+   insertLineEnd(state);
+}
+
+static void
+CUT_VERTEX(State &state, const ControlFlowInst &cf)
+{
+   insertLineStart(state);
+   state.out << "EndPrimitive();";
+   insertLineEnd(state);
+}
+
+static void
+EMIT_CUT_VERTEX(State &state, const ControlFlowInst &cf)
+{
+   insertLineStart(state);
+   state.out << "EmitVertex();";
+   insertLineEnd(state);
+
+   insertLineStart(state);
+   state.out << "EndPrimitive();";
+   insertLineEnd(state);
+}
+
 void
 registerCfFunctions()
 {
@@ -156,6 +184,9 @@ registerCfFunctions()
    registerInstruction(SQ_CF_INST_LOOP_START_DX10, LOOP_START_DX10);
    registerInstruction(SQ_CF_INST_NOP, NOP);
    registerInstruction(SQ_CF_INST_POP, POP);
+   registerInstruction(SQ_CF_INST_EMIT_VERTEX, EMIT_VERTEX);
+   registerInstruction(SQ_CF_INST_CUT_VERTEX, CUT_VERTEX);
+   registerInstruction(SQ_CF_INST_EMIT_CUT_VERTEX, EMIT_CUT_VERTEX);
 }
 
 } // namespace glsl2

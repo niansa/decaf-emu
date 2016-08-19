@@ -196,6 +196,34 @@ BITFIELD(SQ_PGM_RESOURCES_FS, uint32_t)
    BITFIELD_ENTRY(21, 1, bool, DX10_CLAMP);
 BITFIELD_END
 
+// Memory address of the (256-byte aligned) first CF instruction of the shader code for the export shader(ES)
+union SQ_PGM_START_ES
+{
+   uint32_t value;
+   uint32_t PGM_START;
+};
+
+// Size >> 3
+union SQ_PGM_SIZE_ES
+{
+   uint32_t value;
+   uint32_t PGM_SIZE;
+};
+
+// Memory address of the (256-byte aligned) first CF instruction of the shader code for the geometry shader(VS)
+union SQ_PGM_START_GS
+{
+   uint32_t value;
+   uint32_t PGM_START;
+};
+
+// Size >> 3
+union SQ_PGM_SIZE_GS
+{
+   uint32_t value;
+   uint32_t PGM_SIZE;
+};
+
 // Memory address of the (256-byte aligned) first CF instruction of the shader code for the fetch shader(FS)
 union SQ_PGM_START_FS
 {
@@ -210,7 +238,7 @@ union SQ_PGM_SIZE_FS
    uint32_t PGM_SIZE;
 };
 
-// Memory address of the (256-byte aligned) first CF instruction of the shader code for the fetch shader(VS)
+// Memory address of the (256-byte aligned) first CF instruction of the shader code for the vertex shader(VS)
 union SQ_PGM_START_VS
 {
    uint32_t value;
@@ -224,7 +252,7 @@ union SQ_PGM_SIZE_VS
    uint32_t PGM_SIZE;
 };
 
-// Memory address of the (256-byte aligned) first CF instruction of the shader code for the fetch shader(PS)
+// Memory address of the (256-byte aligned) first CF instruction of the shader code for the pixel shader(PS)
 union SQ_PGM_START_PS
 {
    uint32_t value;

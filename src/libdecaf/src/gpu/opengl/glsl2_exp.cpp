@@ -291,6 +291,16 @@ MEM_STREAM(State &state, const ControlFlowInst &cf)
    insertLineEnd(state);
 }
 
+static void
+MEM_RING(State &state, const ControlFlowInst &cf)
+{
+   insertLineStart(state);
+
+   state.out << "// Unimplemented MEM_RING ";
+
+   insertLineEnd(state);
+}
+
 void
 registerExpFunctions()
 {
@@ -300,6 +310,7 @@ registerExpFunctions()
    registerInstruction(latte::SQ_CF_INST_MEM_STREAM1, MEM_STREAM);
    registerInstruction(latte::SQ_CF_INST_MEM_STREAM2, MEM_STREAM);
    registerInstruction(latte::SQ_CF_INST_MEM_STREAM3, MEM_STREAM);
+   registerInstruction(latte::SQ_CF_INST_MEM_RING, MEM_RING);
 }
 
 } // namespace glsl2

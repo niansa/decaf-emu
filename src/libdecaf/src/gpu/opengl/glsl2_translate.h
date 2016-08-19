@@ -51,9 +51,10 @@ struct Shader
    enum Type
    {
       Invalid,
-      PixelShader,
       VertexShader,
       GeometryShader,
+      DataCacheShader,
+      PixelShader,
    };
 
    // Input
