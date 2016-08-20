@@ -577,10 +577,15 @@ insertFileHeader(State &state)
 
          out << "layout (binding = ";
 
+         // TODO: We should probably pass these into the transpiler
          if (state.shader->type == Shader::VertexShader) {
             out << i;
-         } else {
+         } else if (state.shader->type == Shader::GeometryShader) {
+            out << (32 + i);
+         } else if (state.shader->type == Shader::PixelShader) {
             out << (16 + i);
+         } else {
+            decaf_abort("Unexpected shader stage needed bindings");
          }
 
          out
@@ -669,13 +674,6 @@ insertFileHeader(State &state)
       }
 
       out << " sampler_" << id << ";\n";
-   }
-
-   if (state.shader->type == Shader::VertexShader) {
-      out
-         << "out gl_PerVertex {\n"
-         << "   vec4 gl_Position;\n"
-         << "};\n";
    }
 }
 

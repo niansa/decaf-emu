@@ -83,6 +83,7 @@ struct GeometryShader : public Resource
 {
    gl::GLuint object = 0;
    gl::GLuint uniformRegisters = 0;
+   std::array<uint8_t, 256> outputMap;
    std::array<bool, 16> usedUniformBlocks;
    std::string code;
    std::string disassembly;
@@ -356,9 +357,9 @@ private:
    void applyRegister(latte::Register reg);
 
    bool parseFetchShader(FetchShader &shader, void *buffer, size_t size);
-   bool compileVertexShader(VertexShader &vertex, FetchShader &fetch, uint8_t *buffer, size_t size, bool isScreenSpace);
-   bool compileGeometryShader(GeometryShader &geometry, VertexShader &vertex, uint8_t *buffer, size_t size);
-   bool compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint8_t *buffer, size_t size);
+   bool compileVertexShader(VertexShader &vertex, const FetchShader *fetch, uint8_t *buffer, size_t size, bool isScreenSpace, bool isGeomEnabled);
+   bool compileGeometryShader(GeometryShader &geometry, const VertexShader *vertex, uint8_t *buffer, size_t size);
+   bool compilePixelShader(PixelShader &pixel, const VertexShader *vertex, const GeometryShader *geometry, uint8_t *buffer, size_t size);
 
    void runCommandBuffer(uint32_t *buffer, uint32_t size);
 
@@ -395,10 +396,10 @@ private:
    bool mViewportDirty = false;
    bool mScissorDirty = false;
 
-   std::unordered_map<uint64_t, VertexShader> mExportShaders;
-   std::unordered_map<uint64_t, GeometryShader> mGeometryShaders;
    std::unordered_map<uint64_t, FetchShader> mFetchShaders;
    std::unordered_map<uint64_t, VertexShader> mVertexShaders;
+   std::unordered_map<uint64_t, GeometryShader> mGeometryShaders;
+   std::unordered_map<uint64_t, GeometryShader> mDcacheShaders;
    std::unordered_map<uint64_t, PixelShader> mPixelShaders;
    std::map<ShaderKey, Shader> mShaders;
    std::unordered_map<uint64_t, SurfaceBuffer> mSurfaces;

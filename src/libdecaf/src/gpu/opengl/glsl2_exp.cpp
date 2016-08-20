@@ -16,7 +16,7 @@ namespace glsl2
 {
 
 void
-insertExportRegister(fmt::MemoryWriter &out, uint32_t gpr, SQ_REL rel)
+insertRegister(fmt::MemoryWriter &out, uint32_t gpr, SQ_REL rel)
 {
    out << "R[" << gpr;
 
@@ -31,7 +31,7 @@ std::string
 getExportRegister(uint32_t gpr, SQ_REL rel)
 {
    fmt::MemoryWriter out;
-   insertExportRegister(out, gpr, rel);
+   insertRegister(out, gpr, rel);
    return out.str();
 }
 
@@ -294,11 +294,72 @@ MEM_STREAM(State &state, const ControlFlowInst &cf)
 static void
 MEM_RING(State &state, const ControlFlowInst &cf)
 {
-   insertLineStart(state);
+   // We do not currently handle condition override anywhere
+   decaf_check(!cf.exp.word1.VALID_PIXEL_MODE());
+   decaf_check(!cf.exp.word1.WHOLE_QUAD_MODE());
 
-   state.out << "// Unimplemented MEM_RING ";
+   // This instruction should only get one kind of TYPE
+   decaf_check(cf.exp.word0.TYPE() == latte::SQ_EXPORT_WRITE);
 
-   insertLineEnd(state);
+   // Unused as we don't handle SQ_EXPORT_WRITE_IND
+   //cf.exp.word0.INDEX_GPR
+
+   // We currently assume all writes will be vec4's
+   decaf_check(cf.exp.word0.ELEM_SIZE() + 1 == 4);
+
+   // We expect that you write to memory all the data that
+   //  you read out of the GPRs...
+   decaf_check(cf.exp.word1.BURST_COUNT() == cf.exp.buf.ARRAY_SIZE());
+
+   SQ_SEL selX = cf.exp.buf.COMP_MASK() & (1 << 0) ? SQ_SEL_X : SQ_SEL_MASK;
+   SQ_SEL selY = cf.exp.buf.COMP_MASK() & (1 << 1) ? SQ_SEL_Y : SQ_SEL_MASK;
+   SQ_SEL selZ = cf.exp.buf.COMP_MASK() & (1 << 2) ? SQ_SEL_Z : SQ_SEL_MASK;
+   SQ_SEL selW = cf.exp.buf.COMP_MASK() & (1 << 3) ? SQ_SEL_W : SQ_SEL_MASK;
+
+   auto numSels = 4u;
+   auto srcSelMask = condenseSelections(selX, selY, selZ, selW, numSels);
+
+   auto arrayBaseVec = cf.exp.word0.ARRAY_BASE() / 4;
+   for (auto i = 0u; i <= cf.exp.buf.ARRAY_SIZE(); ++i) {
+      auto src = getExportRegister(cf.exp.word0.RW_GPR() + i, cf.exp.word0.RW_REL());
+
+      insertLineStart(state);
+
+      if (state.shader->type == Shader::Type::VertexShader) {
+         // We intentially add `i` on afterwards as having an Export which loops
+         //  in between two different output vertices seems like broken logic.
+         // This will cause the GLSL compiler to complain so we know.
+         auto gsoutIndex = arrayBaseVec + i;
+
+         if (gsoutIndex == 0) {
+            state.out << "gl_Position." << srcSelMask << " = ";
+         } else {
+            state.out << "gsin_" << (gsoutIndex - 1) << "." << srcSelMask << " = ";
+         }
+      } else if (state.shader->type == Shader::Type::GeometryShader) {
+         auto indexWrapValue = state.shader->gsoutRingItemSize / 4;
+
+         // We intentially add `i` on afterwards as having an Export which loops
+         //  in between two different output vertices seems like broken logic.
+         // This will cause the GLSL compiler to complain so we know.
+         auto gsoutIndex = (arrayBaseVec % indexWrapValue) + i;
+
+         // We only support vec4 shader writes currently...
+         decaf_check(state.shader->gsoutRingItemSize % 4 == 0);
+
+         if (gsoutIndex == indexWrapValue - 1) {
+            state.out << "gl_Position." << srcSelMask << " = ";
+         } else {
+            state.out << "gsout_" << gsoutIndex << "." << srcSelMask << " = ";
+         }
+      } else {
+         decaf_abort("Shader wrote to ringbuffers from unexpected stage");
+      }
+
+      insertSelectVector(state.out, src, selX, selY, selZ, selW, numSels);
+      state.out << ";";
+      insertLineEnd(state);
+   }
 }
 
 void

@@ -11,6 +11,8 @@ namespace gpu
 namespace opengl
 {
 
+#pragma optimize("", off)
+
 bool GLDriver::checkActiveDepthBuffer()
 {
    auto db_depth_base = getRegister<latte::DB_DEPTH_BASE>(latte::Register::DB_DEPTH_BASE);

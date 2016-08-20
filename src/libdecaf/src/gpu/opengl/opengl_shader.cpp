@@ -14,6 +14,8 @@
 #include <glbinding/gl/gl.h>
 #include <spdlog/spdlog.h>
 
+#pragma optimize("", off)
+
 namespace gpu
 {
 
@@ -334,7 +336,7 @@ bool GLDriver::checkActiveShader()
             dumpRawShader("vertex", vsPgmAddress, vsPgmSize);
             vertexShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(vsPgmAddress), vsPgmSize), true);
 
-            if (!compileVertexShader(vertexShader, *shader.fetch, make_virtual_ptr<uint8_t>(vsPgmAddress), vsPgmSize, isScreenSpace)) {
+            if (!compileVertexShader(vertexShader, shader.fetch, make_virtual_ptr<uint8_t>(vsPgmAddress), vsPgmSize, isScreenSpace, gsPgmAddress != 0)) {
                gLog->error("Failed to recompile vertex shader");
                return false;
             }
@@ -393,7 +395,7 @@ bool GLDriver::checkActiveShader()
             dumpRawShader("geometry", gsPgmAddress, gsPgmSize);
             geometryShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(gsPgmAddress), gsPgmSize), true);
 
-            if (!compileGeometryShader(geometryShader, *shader.vertex, make_virtual_ptr<uint8_t>(gsPgmAddress), gsPgmSize)) {
+            if (!compileGeometryShader(geometryShader, shader.vertex, make_virtual_ptr<uint8_t>(gsPgmAddress), gsPgmSize)) {
                gLog->error("Failed to recompile geometry shader");
                return false;
             }
@@ -444,7 +446,7 @@ bool GLDriver::checkActiveShader()
             dumpRawShader("pixel", psPgmAddress, psPgmSize);
             pixelShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(psPgmAddress), psPgmSize), true);
 
-            if (!compilePixelShader(pixelShader, *shader.vertex, make_virtual_ptr<uint8_t>(psPgmAddress), psPgmSize)) {
+            if (!compilePixelShader(pixelShader, shader.vertex, shader.geometry, make_virtual_ptr<uint8_t>(psPgmAddress), psPgmSize)) {
                gLog->error("Failed to recompile pixel shader");
                return false;
             }
@@ -496,7 +498,8 @@ bool GLDriver::checkActiveShader()
          }
          gl::glObjectLabel(gl::GL_PROGRAM_PIPELINE, shader.object, -1, label.c_str());
       }
-      gl::glUseProgramStages(shader.object, gl::GL_VERTEX_SHADER_BIT, shader.vertex->object);
+      gl::glUseProgramStages(shader.object, gl::GL_VERTEX_SHADER_BIT, shader.vertex ? shader.vertex->object : 0);
+      gl::glUseProgramStages(shader.object, gl::GL_GEOMETRY_SHADER_BIT, shader.geometry ? shader.geometry->object : 0);
       gl::glUseProgramStages(shader.object, gl::GL_FRAGMENT_SHADER_BIT, shader.pixel ? shader.pixel->object : 0);
    }
 
@@ -560,6 +563,29 @@ bool GLDriver::checkActiveUniforms()
 
             // Bind block
             gl::glBindBufferBase(gl::GL_UNIFORM_BUFFER, i, buffer.object);
+         }
+      }
+
+      if (mActiveShader->geometry && mActiveShader->geometry->object) {
+         for (auto i = 0u; i < latte::MaxUniformBlocks; ++i) {
+            auto sq_alu_const_cache_gs = getRegister<uint32_t>(latte::Register::SQ_ALU_CONST_CACHE_GS_0 + 4 * i);
+            auto sq_alu_const_buffer_size_gs = getRegister<uint32_t>(latte::Register::SQ_ALU_CONST_BUFFER_SIZE_GS_0 + 4 * i);
+            auto used = mActiveShader->geometry->usedUniformBlocks[i];
+
+            if (!used || !sq_alu_const_buffer_size_gs) {
+               gl::glBindBufferBase(gl::GL_UNIFORM_BUFFER, 32 + i, 0);
+               continue;
+            }
+
+            auto addr = sq_alu_const_cache_gs << 8;
+            auto size = sq_alu_const_buffer_size_gs << 8;
+
+            auto &buffer = mDataBuffers[addr];
+
+            configureDataBuffer(&buffer, addr, size, true, false);
+
+            // Bind block
+            gl::glBindBufferBase(gl::GL_UNIFORM_BUFFER, 32 + i, buffer.object);
          }
       }
 
@@ -936,7 +962,8 @@ GLDriver::checkActiveFeedbackBuffers()
    return true;
 }
 
-bool GLDriver::parseFetchShader(FetchShader &shader, void *buffer, size_t size)
+bool
+GLDriver::parseFetchShader(FetchShader &shader, void *buffer, size_t size)
 {
    auto program = reinterpret_cast<latte::ControlFlowInst *>(buffer);
 
@@ -1018,11 +1045,19 @@ getGLSLDataInFormat(latte::SQ_DATA_FORMAT format, latte::SQ_NUM_FORMAT num, latt
    }
 }
 
-bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uint8_t *buffer, size_t size, bool isScreenSpace)
+bool
+GLDriver::compileVertexShader(VertexShader &vertex,
+                              const FetchShader *fetch,
+                              uint8_t *buffer,
+                              size_t size,
+                              bool isScreenSpace,
+                              bool isGeomEnabled)
 {
    auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
    auto spi_vs_out_config = getRegister<latte::SPI_VS_OUT_CONFIG>(latte::Register::SPI_VS_OUT_CONFIG);
-   FetchShader::Attrib *semanticAttribs[32];
+   auto sq_esgs_ring_itemsize = getRegister<uint32_t>(latte::Register::SQ_ESGS_RING_ITEMSIZE);
+
+   const FetchShader::Attrib *semanticAttribs[32];
    std::memset(semanticAttribs, 0, sizeof(FetchShader::Attrib *) * 32);
 
    glsl2::Shader shader;
@@ -1058,8 +1093,10 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
    out << "#define signext10(v) ((v ^ 0x200) - 0x200)\n";
    out << "#define signext16(v) ((v ^ 0x8000) - 0x8000)\n";
 
+   out << "\n";
+
    // Vertex Shader Inputs
-   for (auto &attrib : fetch.attribs) {
+   for (auto &attrib : fetch->attribs) {
       semanticAttribs[attrib.location] = &attrib;
 
       out << "//";
@@ -1094,39 +1131,62 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
    }
    out << '\n';
 
-   // Vertex Shader Exports
-   decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
-   vertex.outputMap.fill(0xff);
+   out
+      << "out gl_PerVertex {\n"
+      << "   vec4 gl_Position;\n"
+      << "};\n";
 
-   for (auto i = 0u; i <= spi_vs_out_config.VS_EXPORT_COUNT(); i++) {
-      auto regId = i / 4;
-      auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
+   if (isGeomEnabled) {
+      // We only support vec4 aligned itemsizes
+      decaf_check(sq_esgs_ring_itemsize % 4 == 0);
 
-      auto semanticNum = i % 4;
-      uint8_t semanticId = 0xff;
+      if (sq_esgs_ring_itemsize > 4) {
+         // Note that we have an if statement here as gl_in[].gl_Position
+         //  is defined by default, outside this block.
+         auto valueCount = (sq_esgs_ring_itemsize / 4) - 1;
+         for (auto i = 0u; i < valueCount; ++i) {
+            out << "out vec4 gsin_" << i << ";\n";
+         }
 
-      if (semanticNum == 0) {
-         semanticId = spi_vs_out_id.SEMANTIC_0();
-      } else if (semanticNum == 1) {
-         semanticId = spi_vs_out_id.SEMANTIC_1();
-      } else if (semanticNum == 2) {
-         semanticId = spi_vs_out_id.SEMANTIC_2();
-      } else if (semanticNum == 3) {
-         semanticId = spi_vs_out_id.SEMANTIC_3();
+         out << "\n";
       }
-
-      if (semanticId == 0xff) {
-         // Stop looping when we hit the end marker
-         break;
-      }
-
-      decaf_check(vertex.outputMap[semanticId] == 0xff);
-      vertex.outputMap[semanticId] = i;
-
-      out << "layout(location = " << i << ")";
-      out << " out vec4 vs_out_" << semanticId << ";\n";
    }
-   out << '\n';
+
+   if (!isGeomEnabled) {
+      // Vertex Shader Exports
+      decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
+      vertex.outputMap.fill(0xff);
+
+      for (auto i = 0u; i <= spi_vs_out_config.VS_EXPORT_COUNT(); i++) {
+         auto regId = i / 4;
+         auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
+
+         auto semanticNum = i % 4;
+         uint8_t semanticId = 0xff;
+
+         if (semanticNum == 0) {
+            semanticId = spi_vs_out_id.SEMANTIC_0();
+         } else if (semanticNum == 1) {
+            semanticId = spi_vs_out_id.SEMANTIC_1();
+         } else if (semanticNum == 2) {
+            semanticId = spi_vs_out_id.SEMANTIC_2();
+         } else if (semanticNum == 3) {
+            semanticId = spi_vs_out_id.SEMANTIC_3();
+         }
+
+         if (semanticId == 0xff) {
+            // Stop looping when we hit the end marker
+            break;
+         }
+      
+         decaf_check(vertex.outputMap[semanticId] == 0xff);
+         vertex.outputMap[semanticId] = i;
+
+         out << "layout(location = " << i << ")";
+         out << " out vec4 psin_" << semanticId << ";\n";
+      }
+      out << '\n';
+   }
 
    // Transform feedback outputs
    for (auto buffer = 0u; buffer < latte::MaxStreamOutBuffers; ++buffer) {
@@ -1163,11 +1223,12 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
          out << "};\n";
       }
    }
+
    out << '\n';
 
    if (isScreenSpace) {
       vertex.isScreenSpace = true;
-      out << "uniform vec4 uViewport;\n";
+      out << "uniform vec4 uViewport;\n\n";
    }
 
    out
@@ -1367,62 +1428,76 @@ bool GLDriver::compileVertexShader(VertexShader &vertex, FetchShader &fetch, uin
 
    out << '\n' << shader.codeBody << '\n';
 
-   for (auto &exp : shader.exports) {
-      switch (exp.type) {
-      case latte::SQ_EXPORT_POS:
-         if (!isScreenSpace) {
-            out << "gl_Position = exp_position_" << exp.id << ";\n";
-         } else {
-            out << "gl_Position = (exp_position_" << exp.id << " - vec4(uViewport.xy, 0.0, 0.0)) * vec4(uViewport.zw, 1.0, 1.0);\n";
+   if (isGeomEnabled) {
+      // Check if they are trying to export stuff as well?
+      decaf_check(shader.exports.size() == 0);
+   } else {
+      for (auto &exp : shader.exports) {
+         switch (exp.type) {
+         case latte::SQ_EXPORT_POS:
+            if (!isScreenSpace) {
+               out << "gl_Position = exp_position_" << exp.id << ";\n";
+            } else {
+               out << "gl_Position = (exp_position_" << exp.id << " - vec4(uViewport.xy, 0.0, 0.0)) * vec4(uViewport.zw, 1.0, 1.0);\n";
+            }
+            break;
+         case latte::SQ_EXPORT_PARAM: {
+            decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
+
+            auto regId = exp.id / 4;
+            auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
+
+            auto semanticNum = exp.id % 4;
+            uint8_t semanticId = 0xff;
+
+            if (semanticNum == 0) {
+               semanticId = spi_vs_out_id.SEMANTIC_0();
+            } else if (semanticNum == 1) {
+               semanticId = spi_vs_out_id.SEMANTIC_1();
+            } else if (semanticNum == 2) {
+               semanticId = spi_vs_out_id.SEMANTIC_2();
+            } else if (semanticNum == 3) {
+               semanticId = spi_vs_out_id.SEMANTIC_3();
+            }
+
+            if (semanticId != 0xff) {
+               out << "psin_" << semanticId << " = exp_param_" << exp.id << ";\n";
+            } else {
+               // This just helps when debugging to understand why it is missing...
+               out << "// vs_out_none = exp_param_" << exp.id << ";\n";
+            }
+         } break;
+         case latte::SQ_EXPORT_PIXEL:
+            decaf_abort("Unexpected pixel export in vertex shader.");
          }
-         break;
-      case latte::SQ_EXPORT_PARAM: {
-         decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
-
-         auto regId = exp.id / 4;
-         auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
-
-         auto semanticNum = exp.id % 4;
-         uint8_t semanticId = 0xff;
-
-         if (semanticNum == 0) {
-            semanticId = spi_vs_out_id.SEMANTIC_0();
-         } else if (semanticNum == 1) {
-            semanticId = spi_vs_out_id.SEMANTIC_1();
-         } else if (semanticNum == 2) {
-            semanticId = spi_vs_out_id.SEMANTIC_2();
-         } else if (semanticNum == 3) {
-            semanticId = spi_vs_out_id.SEMANTIC_3();
-         }
-
-         if (semanticId != 0xff) {
-            out << "vs_out_" << semanticId << " = exp_param_" << exp.id << ";\n";
-         } else {
-            // This just helps when debugging to understand why it is missing...
-            out << "// vs_out_none = exp_param_" << exp.id << ";\n";
-         }
-      } break;
-      case latte::SQ_EXPORT_PIXEL:
-         decaf_abort("Unexpected pixel export in vertex shader.");
       }
    }
 
    out << "}\n";
+   out << "/* FETCH SHADER DISASSEMBLY\n" << fetch->disassembly << "\n*/\n";
    out << "/* VERTEX SHADER DISASSEMBLY\n" << vertex.disassembly << "\n*/\n";
-   out << "/* FETCH SHADER DISASSEMBLY\n" << fetch.disassembly << "\n*/\n";
    vertex.code = out.str();
    return true;
 }
 
-bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &vertex, uint8_t *buffer, size_t size)
+bool
+GLDriver::compileGeometryShader(GeometryShader &geometry,
+                                const VertexShader *vertex,
+                                uint8_t *buffer,
+                                size_t size)
 {
    auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
    auto vgt_primitive_type = getRegister<latte::VGT_PRIMITIVE_TYPE>(latte::Register::VGT_PRIMITIVE_TYPE);
    auto vgt_gs_mode = getRegister<latte::VGT_GS_MODE>(latte::Register::VGT_GS_MODE);
    auto vgt_gs_out_prim_type = getRegister<latte::VGT_GS_OUT_PRIM_TYPE>(latte::Register::VGT_GS_OUT_PRIM_TYPE);
+   auto spi_vs_out_config = getRegister<latte::SPI_VS_OUT_CONFIG>(latte::Register::SPI_VS_OUT_CONFIG);
+   auto sq_esgs_ring_itemsize = getRegister<uint32_t>(latte::Register::SQ_ESGS_RING_ITEMSIZE);
+   auto sq_gs_vert_itemsize = getRegister<uint32_t>(latte::Register::SQ_GS_VERT_ITEMSIZE);
 
    glsl2::Shader shader;
    shader.type = glsl2::Shader::GeometryShader;
+
+   shader.gsoutRingItemSize = sq_gs_vert_itemsize;
 
    // Gather Samplers
    for (auto i = 0; i < latte::MaxSamplers; ++i) {
@@ -1446,6 +1521,8 @@ bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &ver
    geometry.usedUniformBlocks = shader.usedUniformBlocks;
 
    fmt::MemoryWriter out;
+
+   out << shader.fileHeader;
 
    switch (vgt_primitive_type.PRIM_TYPE()) {
    case latte::VGT_DI_PRIMITIVE_TYPE::VGT_DI_PT_POINTLIST:
@@ -1487,10 +1564,10 @@ bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &ver
       out << "layout(points, max_vertices=" << maxVertices << ") out;\n";
       break;
    case latte::VGT_GS_OUT_PRIMITIVE_TYPE::VGT_GS_OUT_PT_LINESTRIP:
-      out << "layout(lines, max_vertices=" << maxVertices << ") out;\n";
+      out << "layout(line_strip, max_vertices=" << maxVertices << ") out;\n";
       break;
    case latte::VGT_GS_OUT_PRIMITIVE_TYPE::VGT_GS_OUT_PT_TRISTRIP:
-      out << "layout(triangles, max_vertices=" << maxVertices << ") out;\n";
+      out << "layout(triangle_strip, max_vertices=" << maxVertices << ") out;\n";
       break;
    default:
       decaf_abort(fmt::format("Unexpected GS output primitive type {}", vgt_gs_out_prim_type.PRIM_TYPE()));
@@ -1498,7 +1575,59 @@ bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &ver
 
    out << "\n";
 
-   out << shader.fileHeader;
+   // We only support vec4 aligned itemsizes
+   decaf_check(sq_esgs_ring_itemsize % 4 == 0);
+   decaf_check(sq_gs_vert_itemsize % 4 == 0);
+
+   out << "in gl_PerVertex {\n";
+   out << "   vec4 gl_Position;\n";
+   out << "} gl_in[];\n";
+
+   if (sq_esgs_ring_itemsize > 4) {
+      // Note that we have an if statement here as gl_in[].gl_Position
+      //  is defined by default, outside this block.
+      auto valueCount = (sq_esgs_ring_itemsize / 4) - 1;
+      for (auto i = 0u; i < valueCount; ++i) {
+         out << "in vec4 gsin_" << i << "[];\n";
+      }
+   }
+
+   out << "\n";
+
+   out << "out gl_PerVertex {\n";
+   out << "   vec4 gl_Position;\n";
+   out << "};\n";
+
+   decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
+   geometry.outputMap.fill(0xff);
+
+   for (auto i = 0u; i <= spi_vs_out_config.VS_EXPORT_COUNT(); i++) {
+      auto regId = i / 4;
+      auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
+
+      auto semanticNum = i % 4;
+      uint8_t semanticId = 0xff;
+
+      if (semanticNum == 0) {
+         semanticId = spi_vs_out_id.SEMANTIC_0();
+      } else if (semanticNum == 1) {
+         semanticId = spi_vs_out_id.SEMANTIC_1();
+      } else if (semanticNum == 2) {
+         semanticId = spi_vs_out_id.SEMANTIC_2();
+      } else if (semanticNum == 3) {
+         semanticId = spi_vs_out_id.SEMANTIC_3();
+      }
+
+      if (semanticId != 0xff) {
+         decaf_check(geometry.outputMap[semanticId] == 0xff);
+         geometry.outputMap[semanticId] = i;
+
+         out << "layout(location = " << i << ")";
+         out << " out vec4 gsout_" << semanticId << ";\n";
+      }
+   }
+
+   out << "\n";
 
    out
       << "void main()\n"
@@ -1515,7 +1644,12 @@ bool GLDriver::compileGeometryShader(GeometryShader &geometry, VertexShader &ver
    return true;
 }
 
-bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint8_t *buffer, size_t size)
+bool
+GLDriver::compilePixelShader(PixelShader &pixel,
+                             const VertexShader *vertex,
+                             const GeometryShader *geometry,
+                             uint8_t *buffer,
+                             size_t size)
 {
    auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
    auto spi_ps_in_control_0 = getRegister<latte::SPI_PS_IN_CONTROL_0>(latte::Register::SPI_PS_IN_CONTROL_0);
@@ -1583,6 +1717,8 @@ bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint
       out << "in vec4 gl_FragCoord;\n";
    }
 
+   out << "\n";
+
    // Pixel Shader Inputs
    std::array<bool, 256> semanticUsed = { false };
    for (auto i = 0u; i < spi_ps_in_control_0.NUM_INTERP(); ++i) {
@@ -1590,7 +1726,16 @@ bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint
       auto semanticId = spi_ps_input_cntl.SEMANTIC();
       decaf_check(semanticId != 0xff);
 
-      auto vsOutputLoc = vertex.outputMap[semanticId];
+      uint8_t vsOutputLoc = 0xff;
+      if (geometry) {
+         // If we have a geometry shader, that's where we get our outputs
+         vsOutputLoc = geometry->outputMap[semanticId];
+      } else if (vertex) {
+         vsOutputLoc = vertex->outputMap[semanticId];
+      } else {
+         decaf_abort("No Geometry or Vertex shader before Pixel stage");
+      }
+
       if (semanticId == 0xff) {
          // Missing semantic means we need to apply the default values instead...
          continue;
@@ -1608,7 +1753,7 @@ bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint
          out << " flat";
       }
 
-      out << " in vec4 vs_out_" << semanticId << ";\n";
+      out << " in vec4 psin_" << semanticId << ";\n";
    }
    out << '\n';
 
@@ -1635,11 +1780,20 @@ bool GLDriver::compilePixelShader(PixelShader &pixel, VertexShader &vertex, uint
       uint8_t semanticId = spi_ps_input_cntl.SEMANTIC();
       decaf_check(semanticId != 0xff);
 
-      auto vsOutputLoc = vertex.outputMap[semanticId];
+      uint8_t vsOutputLoc = 0xff;
+      if (geometry) {
+         // If we have a geometry shader, that's where we get our outputs
+         vsOutputLoc = geometry->outputMap[semanticId];
+      } else if (vertex) {
+         vsOutputLoc = vertex->outputMap[semanticId];
+      } else {
+         decaf_abort("No Geometry or Vertex shader before Pixel stage");
+      }
+
       out << "R[" << i << "] = ";
 
       if (vsOutputLoc != 0xff) {
-          out << "vs_out_" << semanticId;
+          out << "psin_" << semanticId;
       } else {
          if (spi_ps_input_cntl.DEFAULT_VAL() == 0) {
             out << "vec4(0, 0, 0, 0)";

@@ -62,6 +62,7 @@ struct Shader
    std::array<latte::SQ_TEX_DIM, 16> samplerDim;
    bool uniformRegistersEnabled = false;
    bool uniformBlocksEnabled = false;
+   uint32_t gsoutRingItemSize = 0;
 
    // Output (maybe)
    std::string fileHeader;
@@ -176,7 +177,7 @@ void
 registerVtxFunctions();
 
 void
-insertExportRegister(fmt::MemoryWriter &out, uint32_t gpr, latte::SQ_REL rel);
+insertRegister(fmt::MemoryWriter &out, uint32_t gpr, latte::SQ_REL rel);
 
 std::string
 getExportRegister(uint32_t gpr, latte::SQ_REL rel);
