@@ -30,6 +30,8 @@ VTX_FETCH(State &state, const ControlFlowInst &cf, const VertexFetchInst &inst)
       id += SQ_VS_RESOURCE_BASE;
    } else if (state.shader->type == Shader::Type::GeometryShader) {
       id += SQ_GS_RESOURCE_BASE;
+   } else if (state.shader->type == Shader::Type::DataCacheShader) {
+      id += SQ_VS_RESOURCE_BASE;
    } else if (state.shader->type == Shader::Type::PixelShader) {
       id += SQ_PS_RESOURCE_BASE;
    } else {
@@ -87,11 +89,13 @@ VTX_FETCH(State &state, const ControlFlowInst &cf, const VertexFetchInst &inst)
       // We only support unindexed offset lookups
       decaf_check(inst.word0.FETCH_TYPE() == SQ_VTX_FETCH_NO_INDEX_OFFSET);
 
-      // I don't think there is really even such thing for a GSOUT resource...
+      // I don't think there is really even such thing for a GSIN resource...
       decaf_check(inst.word1.USE_CONST_FIELDS() == 1);
 
-      // We only support fetching full vec4 values
-      decaf_check(inst.word2.MEGA_FETCH() && (inst.word0.MEGA_FETCH_COUNT() + 1) == 16);
+      // TODO: We only support VEC4 fetches.  I think that this should be turned
+      //  into some kind of <= check based on the MINI/MEGA fetch size though.
+      // inst.word0.MEGA_FETCH_COUNT()
+      // inst.word2.MEGA_FETCH()
 
       // We do not support relative indexing
       decaf_check(!inst.word0.SRC_REL());
@@ -144,6 +148,45 @@ VTX_FETCH(State &state, const ControlFlowInst &cf, const VertexFetchInst &inst)
          state.out << "texTmp = gsin_" << (valueIdx - 1) << "[" << vertexIdx << "];";
       }
 
+      insertLineEnd(state);
+
+      insertLineStart(state);
+      insertRegister(state.out, inst.gpr.DST_GPR(), inst.gpr.DST_REL());
+      state.out << "." << dstSelMask << " = ";
+      insertSelectVector(state.out, "texTmp", dstSelX, dstSelY, dstSelZ, dstSelW, numDstSels);
+      state.out << ";";
+      insertLineEnd(state);
+   } else if (id == SQ_VS_GSOUT_RESOURCE) {
+      // We only support unindexed offset lookups
+      decaf_check(inst.word0.FETCH_TYPE() == SQ_VTX_FETCH_NO_INDEX_OFFSET);
+
+      // I don't think there is really even such thing for a GSOUT resource...
+      decaf_check(inst.word1.USE_CONST_FIELDS() == 1);
+
+      // TODO: We only support VEC4 fetches.  I think that this should be turned
+      //  into some kind of <= check based on the MINI/MEGA fetch size though.
+      // inst.word0.MEGA_FETCH_COUNT()
+      // inst.word2.MEGA_FETCH()
+
+      // We do not support relative indexing
+      decaf_check(!inst.word0.SRC_REL());
+
+      auto dstSelX = inst.word1.DST_SEL_X();
+      auto dstSelY = inst.word1.DST_SEL_Y();
+      auto dstSelZ = inst.word1.DST_SEL_Z();
+      auto dstSelW = inst.word1.DST_SEL_W();
+
+      auto numDstSels = 4u;
+      auto dstSelMask = condenseSelections(dstSelX, dstSelY, dstSelZ, dstSelW, numDstSels);
+
+      if (numDstSels == 0) {
+         decaf_abort("Encountered strange GSOUT FETCH with no destination writes");
+      }
+
+      int valueIdx = inst.word2.OFFSET() / 16;
+
+      insertLineStart(state);
+      state.out << "texTmp = gsout[" << valueIdx << "];";
       insertLineEnd(state);
 
       insertLineStart(state);

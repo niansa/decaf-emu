@@ -100,7 +100,42 @@ translateTEX(State &state, const ControlFlowInst &cf)
 static void
 translateVTX(State &state, const ControlFlowInst &cf)
 {
-   throw translate_exception("Unable to decode VTX instruction");
+   auto addr = cf.word0.ADDR;
+   auto count = (cf.word1.COUNT() + 1) | (cf.word1.COUNT_3() << 3);
+   auto clauseVtx = reinterpret_cast<const VertexFetchInst *>(state.binary.data() + 8 * addr);
+
+   insertLineStart(state);
+   state.out.write("// {:02} ", state.cfPC);
+   latte::disassembler::disassembleCF(state.out, cf);
+   insertLineEnd(state);
+
+   condStart(state, cf.word1.COND());
+
+   for (auto i = 0u; i < count; ++i) {
+      const auto &vtx = clauseVtx[i];
+      auto id = vtx.word0.VTX_INST();
+      auto name = getInstructionName(id);
+
+      // Print disassembly
+      insertLineStart(state);
+      state.out.write("// {:02} ", state.groupPC);
+
+      latte::disassembler::disassembleVtxInstruction(state.out, cf, vtx);
+
+      insertLineEnd(state);
+
+      // Translate instruction
+      auto itr = sInstructionMapVTX.find(vtx.word0.VTX_INST());
+
+      if (itr != sInstructionMapVTX.end()) {
+         itr->second(state, cf, vtx);
+      } else {
+         throw translate_exception(fmt::format("Unimplemented VTX instruction {} {}", id, name));
+      }
+   }
+
+   condEnd(state);
+   state.out << '\n';
 }
 
 static void

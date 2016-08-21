@@ -179,18 +179,16 @@ bool GLDriver::checkActiveShader()
       psPgmSize = pgm_size_ps.PGM_SIZE << 3;
    }
 
-   uint64_t fsShaderKey = 0;
    uint64_t vsShaderKey = 0;
    uint64_t gsShaderKey = 0;
-   uint64_t dcShaderKey = 0;
    uint64_t psShaderKey = 0;
 
    if (fsPgmAddress) {
-      fsShaderKey = static_cast<uint64_t>(fsPgmAddress) << 32;
+      vsShaderKey ^= static_cast<uint64_t>(fsPgmAddress) << 29;
    }
 
    if (vsPgmAddress) {
-      vsShaderKey = static_cast<uint64_t>(vsPgmAddress) << 32;
+      vsShaderKey ^= static_cast<uint64_t>(vsPgmAddress) << 32;
       vsShaderKey ^= (isScreenSpace ? 1 : 0) << 31;
    }
 
@@ -205,12 +203,12 @@ bool GLDriver::checkActiveShader()
    }
 
    if (gsPgmAddress) {
-      gsShaderKey = static_cast<uint64_t>(gsPgmAddress) << 32;
+      gsShaderKey ^= static_cast<uint64_t>(gsPgmAddress) << 32;
       gsShaderKey ^= vgt_primitive_type.PRIM_TYPE();
    }
 
    if (dcPgmAddress) {
-      dcShaderKey = static_cast<uint64_t>(dcPgmAddress) << 32;
+      gsShaderKey ^= static_cast<uint64_t>(dcPgmAddress) << 29;
    }
 
    if (psPgmAddress) {
@@ -221,20 +219,15 @@ bool GLDriver::checkActiveShader()
       psShaderKey ^= cb_shader_mask.value & 0xFF;
    }
 
-   // We do not currently support data cache shaders...
-   decaf_check(dcPgmAddress == 0);
-
    if (mActiveShader
-    && mActiveShader->fetchKey == fsShaderKey
     && mActiveShader->vertexKey == vsShaderKey
     && mActiveShader->geometryKey == gsShaderKey
-    && mActiveShader->dcacheKey == dcShaderKey
     && mActiveShader->pixelKey == psShaderKey) {
       // We already have the current shader bound, nothing special to do.
       return true;
    }
 
-   auto shaderKey = ShaderKey { fsShaderKey, vsShaderKey, gsShaderKey, dcShaderKey, psShaderKey };
+   auto shaderKey = ShaderKey { vsShaderKey, gsShaderKey, psShaderKey };
    auto &shader = mShaders[shaderKey];
 
    auto getProgramLog = [](auto program) {
@@ -251,7 +244,7 @@ bool GLDriver::checkActiveShader()
    if (!shader.object) {
       // Parse fetch shader if needed
       if (fsPgmAddress) {
-         auto &fetchShader = mFetchShaders[fsShaderKey];
+         auto &fetchShader = mFetchShaders[vsShaderKey];
 
          if (fsPgmAddress && !fetchShader.object) {
             auto aluDivisor0 = getRegister<uint32_t>(latte::Register::VGT_INSTANCE_STEP_RATE_0);
@@ -265,7 +258,7 @@ bool GLDriver::checkActiveShader()
 
             if (!parseFetchShader(fetchShader, make_virtual_ptr<void>(fsPgmAddress), fsPgmSize)) {
                gLog->error("Failed to parse fetch shader");
-               gLog->error("Shader Disassembly:\n{}\n", fetchShader.disassembly);
+               gLog->error("Fetch Disassembly:\n{}\n", fetchShader.disassembly);
                return false;
             }
 
@@ -322,7 +315,6 @@ bool GLDriver::checkActiveShader()
          }
 
          shader.fetch = &fetchShader;
-         shader.fetchKey = fsShaderKey;
       }
 
       if (vsPgmAddress) {
@@ -359,7 +351,7 @@ bool GLDriver::checkActiveShader()
                auto log = getProgramLog(vertexShader.object);
                gLog->error("OpenGL failed to compile vertex shader:\n{}", log);
                gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
-               gLog->error("Shader Disassembly:\n{}\n", vertexShader.disassembly);
+               gLog->error("Vertex Disassembly:\n{}\n", vertexShader.disassembly);
                gLog->error("Shader Code:\n{}\n", vertexShader.code);
                return false;
             }
@@ -384,7 +376,12 @@ bool GLDriver::checkActiveShader()
       }
 
       // Compile geometry shader if neded
-      if (gsPgmAddress) {
+      if (gsPgmAddress | dcPgmAddress) {
+         // In order to generate the OpenGL geometry shader, we must have both the
+         //  geometry shader assembly as well as the data cache shader assembly.
+         decaf_check(gsPgmAddress);
+         decaf_check(dcPgmAddress);
+
          // Compile geometry shader if needed
          auto &geometryShader = mGeometryShaders[gsShaderKey];
 
@@ -395,7 +392,15 @@ bool GLDriver::checkActiveShader()
             dumpRawShader("geometry", gsPgmAddress, gsPgmSize);
             geometryShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(gsPgmAddress), gsPgmSize), true);
 
-            if (!compileGeometryShader(geometryShader, shader.vertex, make_virtual_ptr<uint8_t>(gsPgmAddress), gsPgmSize)) {
+            geometryShader.dcacheShader.cpuMemStart = dcPgmAddress;
+            geometryShader.dcacheShader.cpuMemEnd = dcPgmAddress + dcPgmSize;
+
+            dumpRawShader("dcache", dcPgmAddress, dcPgmSize);
+            geometryShader.dcacheShader.disassembly = latte::disassemble(gsl::as_span(mem::translate<uint8_t>(dcPgmAddress), dcPgmSize), true);
+
+            if (!compileGeometryShader(geometryShader, shader.vertex,
+             make_virtual_ptr<uint8_t>(gsPgmAddress), gsPgmSize,
+             make_virtual_ptr<uint8_t>(dcPgmAddress), dcPgmSize)) {
                gLog->error("Failed to recompile geometry shader");
                return false;
             }
@@ -406,7 +411,7 @@ bool GLDriver::checkActiveShader()
             const gl::GLchar *code[] = { geometryShader.code.c_str() };
             geometryShader.object = gl::glCreateShaderProgramv(gl::GL_GEOMETRY_SHADER, 1, code);
             if (decaf::config::gpu::debug) {
-               std::string label = fmt::format("geometry shader @ 0x{:08X}", gsPgmAddress);
+               std::string label = fmt::format("geometry shader @ 0x{:08X},0x{:08X}", gsPgmAddress, dcPgmAddress);
                gl::glObjectLabel(gl::GL_PROGRAM, geometryShader.object, -1, label.c_str());
             }
 
@@ -419,7 +424,8 @@ bool GLDriver::checkActiveShader()
                gLog->error("OpenGL failed to compile geometry shader:\n{}", log);
                gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
                gLog->error("Vertex Disassembly:\n{}\n", shader.vertex ? shader.vertex->disassembly : "");
-               gLog->error("Shader Disassembly:\n{}\n", geometryShader.disassembly);
+               gLog->error("Geometry Disassembly:\n{}\n", geometryShader.disassembly);
+               gLog->error("DCache Disassembly:\n{}\n", geometryShader.dcacheShader.disassembly);
                gLog->error("Shader Code:\n{}\n", geometryShader.code);
                return false;
             }
@@ -471,7 +477,8 @@ bool GLDriver::checkActiveShader()
                gLog->error("Fetch Disassembly:\n{}\n", shader.fetch ? shader.fetch->disassembly : "");
                gLog->error("Vertex Disassembly:\n{}\n", shader.vertex ? shader.vertex->disassembly : "");
                gLog->error("Geometry Disassembly:\n{}\n", shader.geometry ? shader.geometry->disassembly : "");
-               gLog->error("Shader Disassembly:\n{}\n", pixelShader.disassembly);
+               gLog->error("DCache Disassembly:\n{}\n", shader.geometry ? shader.geometry->dcacheShader.disassembly : "");
+               gLog->error("Pixel Disassembly:\n{}\n", pixelShader.disassembly);
                gLog->error("Shader Code:\n{}\n", pixelShader.code);
                return false;
             }
@@ -490,12 +497,8 @@ bool GLDriver::checkActiveShader()
       // Create pipeline
       gl::glCreateProgramPipelines(1, &shader.object);
       if (decaf::config::gpu::debug) {
-         std::string label;
-         if (shader.pixel) {
-            label = fmt::format("shader set: fs = 0x{:08X}, vs = 0x{:08X}, ps = 0x{:08X}", fsPgmAddress, vsPgmAddress, psPgmAddress);
-         } else {
-            label = fmt::format("shader set: fs = 0x{:08X}, vs = 0x{:08X}, ps = none", fsPgmAddress, vsPgmAddress);
-         }
+         std::string label = fmt::format("shader set: fs=0x{:08X}, vs=0x{:08X}, gs=0x{:08X}, dc=0x{:08X}, ps=0x{:08X}",
+            fsPgmAddress, vsPgmAddress, gsPgmAddress, dcPgmAddress, psPgmAddress);
          gl::glObjectLabel(gl::GL_PROGRAM_PIPELINE, shader.object, -1, label.c_str());
       }
       gl::glUseProgramStages(shader.object, gl::GL_VERTEX_SHADER_BIT, shader.vertex ? shader.vertex->object : 0);
@@ -1484,7 +1487,9 @@ bool
 GLDriver::compileGeometryShader(GeometryShader &geometry,
                                 const VertexShader *vertex,
                                 uint8_t *buffer,
-                                size_t size)
+                                size_t size,
+                                uint8_t *dcBuffer,
+                                size_t dcSize)
 {
    auto sq_config = getRegister<latte::SQ_CONFIG>(latte::Register::SQ_CONFIG);
    auto vgt_primitive_type = getRegister<latte::VGT_PRIMITIVE_TYPE>(latte::Register::VGT_PRIMITIVE_TYPE);
@@ -1492,7 +1497,20 @@ GLDriver::compileGeometryShader(GeometryShader &geometry,
    auto vgt_gs_out_prim_type = getRegister<latte::VGT_GS_OUT_PRIM_TYPE>(latte::Register::VGT_GS_OUT_PRIM_TYPE);
    auto spi_vs_out_config = getRegister<latte::SPI_VS_OUT_CONFIG>(latte::Register::SPI_VS_OUT_CONFIG);
    auto sq_esgs_ring_itemsize = getRegister<uint32_t>(latte::Register::SQ_ESGS_RING_ITEMSIZE);
+   auto sq_gsvs_ring_itemsize = getRegister<uint32_t>(latte::Register::SQ_GSVS_RING_ITEMSIZE);
    auto sq_gs_vert_itemsize = getRegister<uint32_t>(latte::Register::SQ_GS_VERT_ITEMSIZE);
+
+   // It is a requirement that we have a data cache shader
+   decaf_check(dcBuffer);
+
+   glsl2::Shader dcShader;
+   dcShader.type = glsl2::Shader::DataCacheShader;
+
+   if (!glsl2::translate(dcShader, gsl::as_span(dcBuffer, dcSize))) {
+      gLog->error("Failed to decode geometry shader\n{}", geometry.dcacheShader.disassembly);
+      return false;
+   }
+
 
    glsl2::Shader shader;
    shader.type = glsl2::Shader::GeometryShader;
@@ -1598,6 +1616,7 @@ GLDriver::compileGeometryShader(GeometryShader &geometry,
    out << "   vec4 gl_Position;\n";
    out << "};\n";
 
+   // Vertex Shader Exports
    decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
    geometry.outputMap.fill(0xff);
 
@@ -1623,11 +1642,60 @@ GLDriver::compileGeometryShader(GeometryShader &geometry,
          geometry.outputMap[semanticId] = i;
 
          out << "layout(location = " << i << ")";
-         out << " out vec4 gsout_" << semanticId << ";\n";
+         out << " out vec4 psin_" << semanticId << ";\n";
+      }
+   }
+   out << '\n';
+
+   out << "vec4 gsout[" << (sq_gs_vert_itemsize / 4) << "];\n";
+   out << "\n";
+
+   out
+      << "void EmitDcacheVertex()\n"
+      << "{\n"
+      << dcShader.codeHeader
+      << dcShader.codeBody;
+
+   for (auto &exp : dcShader.exports) {
+      switch (exp.type) {
+      case latte::SQ_EXPORT_POS:
+         out << "gl_Position = exp_position_" << exp.id << ";\n";
+         break;
+      case latte::SQ_EXPORT_PARAM: {
+         decaf_check(!spi_vs_out_config.VS_PER_COMPONENT());
+
+         auto regId = exp.id / 4;
+         auto spi_vs_out_id = getRegister<latte::SPI_VS_OUT_ID_N>(latte::Register::SPI_VS_OUT_ID_0 + 4 * regId);
+
+         auto semanticNum = exp.id % 4;
+         uint8_t semanticId = 0xff;
+
+         if (semanticNum == 0) {
+            semanticId = spi_vs_out_id.SEMANTIC_0();
+         } else if (semanticNum == 1) {
+            semanticId = spi_vs_out_id.SEMANTIC_1();
+         } else if (semanticNum == 2) {
+            semanticId = spi_vs_out_id.SEMANTIC_2();
+         } else if (semanticNum == 3) {
+            semanticId = spi_vs_out_id.SEMANTIC_3();
+         }
+
+         if (semanticId != 0xff) {
+            out << "psin_" << semanticId << " = exp_param_" << exp.id << ";\n";
+         } else {
+            // This just helps when debugging to understand why it is missing...
+            out << "// vs_out_none = exp_param_" << exp.id << ";\n";
+         }
+      } break;
+      case latte::SQ_EXPORT_PIXEL:
+         decaf_abort("Unexpected pixel export in vertex shader.");
       }
    }
 
-   out << "\n";
+   out
+      << "   EmitVertex();\n"
+      << "}\n"
+      << "\n";
 
    out
       << "void main()\n"
@@ -1639,6 +1707,7 @@ GLDriver::compileGeometryShader(GeometryShader &geometry,
    out << "}\n";
 
    out << "/* GEOMETRY SHADER DISASSEMBLY\n" << geometry.disassembly << "\n*/\n";
+   out << "/* DATA CACHE SHADER DISASSEMBLY\n" << geometry.dcacheShader.disassembly << "\n*/\n";
 
    geometry.code = out.str();
    return true;

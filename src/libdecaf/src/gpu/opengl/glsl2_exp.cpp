@@ -347,11 +347,7 @@ MEM_RING(State &state, const ControlFlowInst &cf)
          // We only support vec4 shader writes currently...
          decaf_check(state.shader->gsoutRingItemSize % 4 == 0);
 
-         if (gsoutIndex == indexWrapValue - 1) {
-            state.out << "gl_Position." << srcSelMask << " = ";
-         } else {
-            state.out << "gsout_" << gsoutIndex << "." << srcSelMask << " = ";
-         }
+         state.out << "gsout[" << gsoutIndex << "]." << srcSelMask << " = ";
       } else {
          decaf_abort("Shader wrote to ringbuffers from unexpected stage");
       }

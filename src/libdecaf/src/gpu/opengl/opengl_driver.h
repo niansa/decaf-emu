@@ -79,6 +79,11 @@ struct VertexShader : public Resource
    std::string disassembly;
 };
 
+struct DataCacheShader : public Resource
+{
+   std::string disassembly;
+};
+
 struct GeometryShader : public Resource
 {
    gl::GLuint object = 0;
@@ -87,6 +92,7 @@ struct GeometryShader : public Resource
    std::array<bool, 16> usedUniformBlocks;
    std::string code;
    std::string disassembly;
+   DataCacheShader dcacheShader;
 };
 
 struct PixelShader : public Resource
@@ -101,7 +107,7 @@ struct PixelShader : public Resource
    std::string disassembly;
 };
 
-using ShaderKey = std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t>;
+using ShaderKey = std::tuple<uint64_t, uint64_t, uint64_t>;
 
 struct Shader
 {
@@ -110,10 +116,8 @@ struct Shader
    VertexShader *vertex;
    GeometryShader *geometry;
    PixelShader *pixel;  // Null if rasterization is disabled
-   uint64_t fetchKey;
    uint64_t vertexKey;
    uint64_t geometryKey;
-   uint64_t dcacheKey;
    uint64_t pixelKey;
 };
 
@@ -358,7 +362,7 @@ private:
 
    bool parseFetchShader(FetchShader &shader, void *buffer, size_t size);
    bool compileVertexShader(VertexShader &vertex, const FetchShader *fetch, uint8_t *buffer, size_t size, bool isScreenSpace, bool isGeomEnabled);
-   bool compileGeometryShader(GeometryShader &geometry, const VertexShader *vertex, uint8_t *buffer, size_t size);
+   bool compileGeometryShader(GeometryShader &geometry, const VertexShader *vertex, uint8_t *buffer, size_t size, uint8_t *dcBuffer, size_t dcSize);
    bool compilePixelShader(PixelShader &pixel, const VertexShader *vertex, const GeometryShader *geometry, uint8_t *buffer, size_t size);
 
    void runCommandBuffer(uint32_t *buffer, uint32_t size);

@@ -149,7 +149,7 @@ EMIT_VERTEX(State &state, const ControlFlowInst &cf)
 {
    condStart(state, cf.word1.COND());
    insertLineStart(state);
-   state.out << "EmitVertex();";
+   state.out << "EmitDcacheVertex();";
    insertLineEnd(state);
    condEnd(state);
 }
@@ -170,7 +170,7 @@ EMIT_CUT_VERTEX(State &state, const ControlFlowInst &cf)
    condStart(state, cf.word1.COND());
 
    insertLineStart(state);
-   state.out << "EmitVertex();";
+   state.out << "EmitDcacheVertex();";
    insertLineEnd(state);
 
    insertLineStart(state);
