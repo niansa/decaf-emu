@@ -24,9 +24,6 @@
     <ClCompile Include="..\src\decaf-sdl\decafsdl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\decaf-sdl\decafsdl_draw.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\decaf-sdl\decafsdl_input.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

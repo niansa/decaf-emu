@@ -20,6 +20,9 @@ public:
    shutdown() override;
 
    void
+   windowResized() override;
+
+   void
    renderFrame(Viewport &tv,
                Viewport &drc) override;
 
@@ -55,6 +58,7 @@ protected:
    gl::GLuint mVertArray;
    gl::GLuint mVertBuffer;
    gl::GLuint mSampler;
+
 };
 
 #endif // DECAF_NOGL

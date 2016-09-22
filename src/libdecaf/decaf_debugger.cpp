@@ -11,8 +11,6 @@ namespace debugger
 void
 initialise()
 {
-   auto configPath = makeConfigPath("imgui.ini");
-   ::debugger::ui::initialise(configPath);
 }
 
 } // namespace debugger

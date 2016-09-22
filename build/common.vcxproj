@@ -74,6 +74,7 @@
     <ClInclude Include="..\src\common\bit_cast.h" />
     <ClInclude Include="..\src\common\byte_swap.h" />
     <ClInclude Include="..\src\common\cerealjsonoptionalinput.h" />
+    <ClInclude Include="..\src\common\d3dx12.h" />
     <ClInclude Include="..\src\common\debuglog.h" />
     <ClInclude Include="..\src\common\decaf_assert.h" />
     <ClInclude Include="..\src\common\enum_end.h" />

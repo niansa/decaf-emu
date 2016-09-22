@@ -23,6 +23,9 @@ public:
    shutdown() = 0;
 
    virtual void
+   windowResized() = 0;
+
+   virtual void
    renderFrame(Viewport &tv,
                Viewport &drc) = 0;
 
@@ -34,4 +37,5 @@ public:
 
 protected:
    SDL_Window *mWindow = nullptr;
+
 };

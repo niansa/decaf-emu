@@ -16,7 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\decaf-sdl\config.cpp" />
-    <ClCompile Include="..\src\decaf-sdl\decafsdl_draw.cpp" />
     <ClCompile Include="..\src\decaf-sdl\decafsdl_dx12.cpp" />
     <ClCompile Include="..\src\decaf-sdl\decafsdl_graphics.cpp" />
     <ClCompile Include="..\src\decaf-sdl\decafsdl_input.cpp" />

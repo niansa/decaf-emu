@@ -229,6 +229,12 @@
     <Filter Include="Source Files\gpu\dx12">
       <UniqueIdentifier>{b8232bcc-5ec6-4313-bed9-d374861a5461}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\gpu\hlsl2">
+      <UniqueIdentifier>{0a460d19-90d6-4761-843a-cde6e91f6669}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\gpu\hlsl2">
+      <UniqueIdentifier>{96c164d4-c4d9-4ccc-9c96-537c3ee4c701}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\libdecaf\src\modules\coreinit\coreinit.cpp">
@@ -696,9 +702,6 @@
     <ClCompile Include="..\src\libdecaf\src\gpu\opengl\opengl_draw.cpp">
       <Filter>Source Files\gpu\opengl</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\libdecaf\src\gpu\opengl\opengl_pm4.cpp">
-      <Filter>Source Files\gpu\opengl</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\libdecaf\src\gpu\opengl\opengl_registers.cpp">
       <Filter>Source Files\gpu\opengl</Filter>
     </ClCompile>
@@ -956,6 +959,69 @@
     </ClCompile>
     <ClCompile Include="..\src\libdecaf\src\gpu\pm4_processor.cpp">
       <Filter>Source Files\gpu</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_draw.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_surface.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_drawbuffer.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_pm4.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_translate.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_exp.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_cf.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_tex.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_vtx.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_alu_op2.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_alu_op3.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_buffers.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_textures.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_samplers.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_view.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_uniforms.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_shaders.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_vbuffers.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_rendertargets.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\dx12\dx12_utilities.cpp">
+      <Filter>Source Files\gpu\dx12</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_alu_reduc.cpp">
+      <Filter>Source Files\gpu\hlsl2</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1795,6 +1861,24 @@
     </ClInclude>
     <ClInclude Include="..\src\libdecaf\src\gpu\pm4_processor.h">
       <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_translate.h">
+      <Filter>Header Files\gpu\hlsl2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\microcode\latte_parser.h">
+      <Filter>Header Files\gpu\microcode</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\gpu_shadertranspiler.h">
+      <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\hlsl2\hlsl2_genhelpers.h">
+      <Filter>Header Files\gpu\hlsl2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\gpu_datahash.h">
+      <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\dx12\dx12_utilities.h">
+      <Filter>Header Files\gpu\dx12</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

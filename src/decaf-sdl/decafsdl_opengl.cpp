@@ -401,6 +401,11 @@ DecafSDLOpenGL::shutdown()
 }
 
 void
+DecafSDLOpenGL::windowResized()
+{
+}
+
+void
 DecafSDLOpenGL::renderFrame(Viewport &tv, Viewport &drc)
 {
    if (!config::gpu::force_sync) {

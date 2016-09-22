@@ -131,6 +131,8 @@ DecafSDL::run(const std::string &gamePath)
          case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
                shouldQuit = true;
+            } else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+               mGraphicsDriver->windowResized();
             }
 
             break;
