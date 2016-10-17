@@ -8,6 +8,8 @@
 #include "gpu/gpu_utilities.h"
 #include <d3dcompiler.h>
 
+#pragma optimize("", off)
+
 namespace gpu
 {
 

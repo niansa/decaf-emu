@@ -3,8 +3,51 @@
 #include "hlsl2_genhelpers.h"
 #include "hlsl2_translate.h"
 
+#pragma optimize("", off)
+
 namespace hlsl2
 {
+
+void Transpiler::translateVtx_FETCH(const ControlFlowInst &cf, const VertexFetchInst &inst)
+{
+   // Let's only support a very expected set of values
+   decaf_check(inst.word0.FETCH_TYPE() == SQ_VTX_FETCH_TYPE::NO_INDEX_OFFSET);
+   decaf_check(inst.word1.USE_CONST_FIELDS() == 1);
+   decaf_check(inst.word2.OFFSET() == 0);
+   decaf_check(inst.word2.MEGA_FETCH() && (inst.word0.MEGA_FETCH_COUNT() + 1) == 16);
+
+   // Grab the source register information
+   GprSelRef srcGpr;
+   srcGpr.gpr = makeGprRef(inst.word0.SRC_GPR(), inst.word0.SRC_REL(), SQ_INDEX_MODE::LOOP);
+   srcGpr.sel = inst.word0.SRC_SEL_X();
+
+   // Grab the destination register information
+   GprMaskRef destGpr;
+   destGpr.gpr = makeGprRef(inst.gpr.DST_GPR(), inst.gpr.DST_REL(), SQ_INDEX_MODE::LOOP);
+   destGpr.mask[SQ_CHAN::X] = inst.word1.DST_SEL_X();
+   destGpr.mask[SQ_CHAN::Y] = inst.word1.DST_SEL_Y();
+   destGpr.mask[SQ_CHAN::Z] = inst.word1.DST_SEL_Z();
+   destGpr.mask[SQ_CHAN::W] = inst.word1.DST_SEL_W();
+
+   if (mType == ShaderParser::Type::Vertex) {
+      auto id = inst.word0.BUFFER_ID() + SQ_RES_OFFSET::VS_TEX_RESOURCE_0;
+
+      if (id >= SQ_RES_OFFSET::VS_BUF_RESOURCE_0 && id <= SQ_RES_OFFSET::VS_BUF_RESOURCE_0 + 16) {
+         auto bufferId = id - SQ_RES_OFFSET::VS_BUF_RESOURCE_0;
+         mCbufferNumUsed[bufferId] = latte::MaxUniformBlockSize / 4 / sizeof(float);
+
+         auto source = fmt::format("CBUF{}[{}]", bufferId, genGprSelRefStr(srcGpr));
+         insertAssignStmt(genGprRefStr(destGpr.gpr), source, destGpr.mask);
+      } else {
+         decaf_abort("Unsupported vertex shader VTX_FETCH resource");
+      }
+   } else {
+      decaf_abort("Unsupported shader type for VTX_FETCH");
+   }
+
+   auto x = mOut.str();
+   __nop();
+}
 
 void Transpiler::translateVtx_SEMANTIC(const ControlFlowInst &cf, const VertexFetchInst &inst)
 {
@@ -34,11 +77,12 @@ void Transpiler::translateVtx_SEMANTIC(const ControlFlowInst &cf, const VertexFe
    //inst.word2.MEGA_FETCH();
    //inst.word0.MEGA_FETCH_COUNT();
 
-   auto srcGpr = makeGprRef(inst.word0.SRC_GPR(), inst.word0.SRC_REL(), SQ_INDEX_MODE::LOOP);
-   auto srcSel = inst.word0.SRC_SEL_X();
+   GprSelRef srcGpr;
+   srcGpr.gpr = makeGprRef(inst.word0.SRC_GPR(), inst.word0.SRC_REL(), SQ_INDEX_MODE::LOOP);
+   srcGpr.sel = inst.word0.SRC_SEL_X();
 
    // We do not support indexing for fetch from buffers...
-   decaf_check(srcGpr.indexMode == GprIndexMode::None);
+   decaf_check(srcGpr.gpr.indexMode == GprIndexMode::None);
 
    GprMaskRef destGpr;
    destGpr.gpr = findVtxSemanticGpr(inst.sem.SEMANTIC_ID());
@@ -75,11 +119,11 @@ void Transpiler::translateVtx_SEMANTIC(const ControlFlowInst &cf, const VertexFe
    } else if (inst.word0.FETCH_TYPE() == SQ_VTX_FETCH_TYPE::INSTANCE_DATA) {
       indexMode = InputData::IndexMode::PerInstance;
 
-      if (srcSel == SQ_SEL::SEL_Y) {
+      if (srcGpr.sel == SQ_SEL::SEL_Y) {
          divisor = mVsInstanceStepRates[0];
-      } else if (srcSel == SQ_SEL::SEL_Z) {
+      } else if (srcGpr.sel == SQ_SEL::SEL_Z) {
          divisor = mVsInstanceStepRates[1];
-      } else if (srcSel == SQ_SEL::SEL_W) {
+      } else if (srcGpr.sel == SQ_SEL::SEL_W) {
          divisor = 0;
       } else {
          decaf_abort("Unexpected vertex fetch divisor selector");

@@ -53,7 +53,6 @@ Driver::checkActiveTextures()
       auto baseAddress = sq_tex_resource_word2.BASE_ADDRESS() << 8;
 
       if (!baseAddress) {
-         // TODO: I think we need to register a "NULL descriptor" here...
          continue;
       }
 
@@ -86,6 +85,8 @@ Driver::checkActiveTextures()
 
       // Get the surface
       auto buffer = getSurfaceBuffer(baseAddress, dim, format, numFormat, formatComp, degamma, pitch, width, height, depth, samples, false, tileMode, false);
+
+      transitionSurfaceTexture(buffer->active, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
       D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 
@@ -153,27 +154,12 @@ Driver::checkActiveTextures()
       mDevice->CreateShaderResourceView(buffer->active->object.Get(), &srvDesc, srvs[i]);
    }
 
-   if (mActivePipelineMode == PipelineMode::Registers) {
-      mCmdList->SetGraphicsRootDescriptorTable(3, srvs);
-   } else if (mActivePipelineMode == PipelineMode::Buffers) {
-      mCmdList->SetGraphicsRootDescriptorTable(3, srvs);
-   } else if (mActivePipelineMode == PipelineMode::Geometry) {
-      mCmdList->SetGraphicsRootDescriptorTable(5, srvs);
-   } else {
-      decaf_abort("Unexpected pipeline mode");
-   }
+   mCmdList->SetGraphicsRootDescriptorTable(
+      getDescriptorIndex(DescriptorType::PixelTextures), srvs);
 
    // SECRETLY COPY TO VS FOR NOW
-   if (mActivePipelineMode == PipelineMode::Registers) {
-      mCmdList->SetGraphicsRootDescriptorTable(2, srvs);
-   } else if (mActivePipelineMode == PipelineMode::Buffers) {
-      mCmdList->SetGraphicsRootDescriptorTable(2, srvs);
-   } else if (mActivePipelineMode == PipelineMode::Geometry) {
-      mCmdList->SetGraphicsRootDescriptorTable(4, srvs);
-   } else {
-      decaf_abort("Unexpected pipeline mode");
-   }
-
+   mCmdList->SetGraphicsRootDescriptorTable(
+      getDescriptorIndex(DescriptorType::VertexTextures), srvs);
 
    return true;
 }

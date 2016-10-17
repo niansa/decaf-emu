@@ -4,6 +4,8 @@
 #include "common/murmur3.h"
 #include "dx12_driver.h"
 
+#pragma optimize("", off)
+
 namespace gpu
 {
 

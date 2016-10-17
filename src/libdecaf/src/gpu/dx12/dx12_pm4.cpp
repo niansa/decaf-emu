@@ -440,6 +440,8 @@ Driver::drawGenericIndexed(uint32_t numIndices, void *indices)
 void
 Driver::drawIndexAuto(const pm4::DrawIndexAuto &data)
 {
+   return;
+
    ensureDescriptorHeaps();
 
    if (!checkReadyDraw()) {
@@ -452,6 +454,8 @@ Driver::drawIndexAuto(const pm4::DrawIndexAuto &data)
 void
 Driver::drawIndex2(const pm4::DrawIndex2 &data)
 {
+   return;
+
    ensureDescriptorHeaps();
 
    if (!checkReadyDraw()) {
@@ -464,6 +468,8 @@ Driver::drawIndex2(const pm4::DrawIndex2 &data)
 void
 Driver::drawIndexImmd(const pm4::DrawIndexImmd &data)
 {
+   return;
+
    ensureDescriptorHeaps();
 
    if (!checkReadyDraw()) {

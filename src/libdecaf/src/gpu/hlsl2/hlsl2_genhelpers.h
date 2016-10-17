@@ -62,6 +62,27 @@ genGprRefStr(const latte::GprRef &gpr)
 }
 
 inline std::string
+genGprSelRefStr(const latte::GprSelRef &gpr)
+{
+   switch (gpr.sel) {
+   case latte::SQ_SEL::SEL_0:
+      return "0";
+   case latte::SQ_SEL::SEL_1:
+      return "1";
+   case latte::SQ_SEL::SEL_X:
+      return fmt::format("{}.x", genGprRefStr(gpr.gpr));
+   case latte::SQ_SEL::SEL_Y:
+      return fmt::format("{}.y", genGprRefStr(gpr.gpr));
+   case latte::SQ_SEL::SEL_Z:
+      return fmt::format("{}.z", genGprRefStr(gpr.gpr));
+   case latte::SQ_SEL::SEL_W:
+      return fmt::format("{}.w", genGprRefStr(gpr.gpr));
+   default:
+      decaf_abort("Unexpected selector value for GPR reference");
+   }
+}
+
+inline std::string
 genCbufferRefStr(const latte::CbufferRef &cbuffer)
 {
    switch (cbuffer.indexMode) {

@@ -7,6 +7,8 @@
 #include <spdlog/fmt/fmt.h>
 #include <stdexcept>
 
+#pragma optimize("", off)
+
 namespace latte
 {
 
@@ -262,13 +264,15 @@ private:
 
 };
 
-enum class GprIndexMode : uint32_t {
+enum class GprIndexMode : uint32_t
+{
    None,
    AR_X,
    AL
 };
 
-enum class CfileIndexMode : uint32_t {
+enum class CfileIndexMode : uint32_t
+{
    None,
    AR_X,
    AR_Y,
@@ -277,59 +281,77 @@ enum class CfileIndexMode : uint32_t {
    AL
 };
 
-enum class CbufferIndexMode : uint32_t {
+enum class CbufferIndexMode : uint32_t
+{
    None,
    AL
 };
 
-enum class VarRefType : uint32_t {
+enum class VarRefType : uint32_t
+{
    FLOAT,
    INT,
    UINT
 };
 
-struct GprRef {
+struct GprRef
+{
    uint32_t number;
    GprIndexMode indexMode;
 };
 
-struct CfileRef {
+struct CfileRef
+{
    uint32_t index;
    CfileIndexMode indexMode;
 };
 
-struct CbufferRef {
+struct CbufferRef
+{
    uint32_t bufferId;
    uint32_t index;
    CbufferIndexMode indexMode;
 };
 
-struct GprMaskRef {
+struct GprMaskRef
+{
    GprRef gpr;
    std::array<SQ_SEL, 4> mask;
 };
 
-struct GprChanRef {
+struct GprSelRef
+{
+   GprRef gpr;
+   SQ_SEL sel;
+};
+
+struct GprChanRef
+{
    GprRef gpr;
    SQ_CHAN chan;
 };
 
-struct CfileChanRef {
+struct CfileChanRef
+{
    CfileRef cfile;
    SQ_CHAN chan;
 };
 
-struct CbufferChanRef {
+struct CbufferChanRef
+{
    CbufferRef cbuffer;
    SQ_CHAN chan;
 };
 
-struct PrevValRef {
+struct PrevValRef
+{
    SQ_CHAN unit;
 };
 
-struct ValueRef {
-   union {
+struct ValueRef
+{
+   union
+   {
       int32_t intValue;
       uint32_t uintValue;
       float floatValue;

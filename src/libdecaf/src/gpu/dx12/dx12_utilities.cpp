@@ -4,6 +4,8 @@
 #include "common/log.h"
 #include "dx12_utilities.h"
 
+#pragma optimize("", off)
+
 namespace gpu
 {
 

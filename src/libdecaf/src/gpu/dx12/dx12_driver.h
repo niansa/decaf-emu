@@ -216,9 +216,9 @@ struct FrameData
    pm4::Buffer *sourceBuffer = nullptr;
    UINT64 fenceValue = 0;
    std::vector<std::function<void()>> callbacks;
-   FrameHeap *rtvHeap;
-   FrameHeap *samplerHeap;
-   FrameHeap *srvHeap;
+   std::vector<FrameHeap *> rtvHeaps;
+   std::vector<FrameHeap *> samplerHeaps;
+   std::vector<FrameHeap *> srvHeaps;
    std::vector<FrameResource *> uploadBuffers;
    std::vector<FrameResource *> readbackBuffers;
 };
@@ -348,7 +348,7 @@ private:
                     latte::SQ_TILE_MODE tileMode,
                     bool discardData);
 
-   void
+   D3D12_RESOURCE_STATES
    transitionSurfaceTexture(SurfaceTexture *surface,
                             D3D12_RESOURCE_STATES state);
 

@@ -55,6 +55,10 @@ Driver::initialise(ID3D12Device *device, ID3D12CommandQueue *queue)
       ComPtr<ID3DBlob> error;
       decaf_checkhr(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
       decaf_checkhr(mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRegRootSignature)));
+
+      if (decaf::config::gpu::debug) {
+         mRegRootSignature->SetName(L"Register Root Signature");
+      }
    }
 
    // Create our uniform buffer based root signature.
@@ -89,6 +93,10 @@ Driver::initialise(ID3D12Device *device, ID3D12CommandQueue *queue)
       ComPtr<ID3DBlob> error;
       decaf_checkhr(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
       decaf_checkhr(mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mUniRootSignature)));
+
+      if (decaf::config::gpu::debug) {
+         mUniRootSignature->SetName(L"Uniform Root Signature");
+      }
    }
 
    // Create our geometry based root signature.
@@ -122,6 +130,10 @@ Driver::initialise(ID3D12Device *device, ID3D12CommandQueue *queue)
       ComPtr<ID3DBlob> error;
       decaf_checkhr(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
       decaf_checkhr(mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mGeomRootSignature)));
+
+      if (decaf::config::gpu::debug) {
+         mGeomRootSignature->SetName(L"Geometry Root Signature");
+      }
    }
 
    // Create our copy root signature.
@@ -160,6 +172,10 @@ Driver::initialise(ID3D12Device *device, ID3D12CommandQueue *queue)
       ComPtr<ID3DBlob> error;
       decaf_checkhr(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
       decaf_checkhr(mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mCopyRootSignature)));
+
+      if (decaf::config::gpu::debug) {
+         mCopyRootSignature->SetName(L"Copy Root Signature");
+      }
    }
 
    // Create our copy pipeline state.
@@ -237,6 +253,11 @@ void Driver::executeBuffer(pm4::Buffer *buffer)
       // Create Command List
       decaf_checkhr(mDevice->CreateCommandList(
          0, D3D12_COMMAND_LIST_TYPE_DIRECT, mFrameData->allocator.Get(), nullptr, IID_PPV_ARGS(&mFrameData->cmdList)));
+
+      if (decaf::config::gpu::debug) {
+         mFrameData->allocator->SetName(L"GPU7 Command Allocator");
+         mFrameData->cmdList->SetName(L"GPU7 Command List");
+      }
    }
 
    // Sanity checks
@@ -308,26 +329,17 @@ Driver::ensureDescriptorHeaps(bool forceSet)
    //  descriptor items remaining in any of the heaps.
 
    if (mRtvHeap && mRtvHeap->usedItems >= mRtvHeap->maxItems / 4 * 3) {
-      // TODO: Support delay-releasing multiple heaps in one frame
-      decaf_check(!mFrameData->rtvHeap);
-
-      mFrameData->rtvHeap = mRtvHeap;
+      mFrameData->rtvHeaps.push_back(mRtvHeap);
       mRtvHeap = nullptr;
    }
 
    if (mSamplerHeap && mSamplerHeap->usedItems >= mSamplerHeap->maxItems / 4 * 3) {
-      // TODO: Support delay-releasing multiple heaps in one frame
-      decaf_check(!mFrameData->samplerHeap);
-
-      mFrameData->samplerHeap = mSamplerHeap;
+      mFrameData->samplerHeaps.push_back(mSamplerHeap);
       mSamplerHeap = nullptr;
    }
 
    if (mSrvHeap && mSrvHeap->usedItems >= mSrvHeap->maxItems / 4 * 3) {
-      // TODO: Support delay-releasing multiple heaps in one frame
-      decaf_check(!mFrameData->srvHeap);
-
-      mFrameData->srvHeap = mSrvHeap;
+      mFrameData->srvHeaps.push_back(mSrvHeap);
       mSrvHeap = nullptr;
    }
 
@@ -349,6 +361,10 @@ Driver::ensureDescriptorHeaps(bool forceSet)
          heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
          decaf_checkhr(mDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mRtvHeap->heap)));
 
+         if (decaf::config::gpu::debug) {
+            mRtvHeap->heap->SetName(L"GPU7 RTV Heap");
+         }
+
          mRtvHeap->descriptorSize = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
       }
    }
@@ -368,6 +384,10 @@ Driver::ensureDescriptorHeaps(bool forceSet)
          heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
          heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
          decaf_checkhr(mDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mSamplerHeap->heap)));
+
+         if (decaf::config::gpu::debug) {
+            mSamplerHeap->heap->SetName(L"GPU7 Sampler Heap");
+         }
 
          mSamplerHeap->descriptorSize = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
       }
@@ -390,6 +410,10 @@ Driver::ensureDescriptorHeaps(bool forceSet)
          heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
          heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
          decaf_checkhr(mDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mSrvHeap->heap)));
+
+         if (decaf::config::gpu::debug) {
+            mSrvHeap->heap->SetName(L"GPU7 SRV Heap");
+         }
 
          mSrvHeap->descriptorSize = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
       }
@@ -435,21 +459,23 @@ Driver::checkSyncObjects()
       frameData->sourceBuffer = nullptr;
 
       // Free the heaps that were attached
-      if (frameData->rtvHeap) {
-         frameData->rtvHeap->usedItems = 0;
-         mRtvFrameHeapPool.push_back(frameData->rtvHeap);
-         frameData->rtvHeap = nullptr;
+      for (auto &heap : frameData->rtvHeaps) {
+         heap->usedItems = 0;
+         mRtvFrameHeapPool.push_back(heap);
       }
-      if (frameData->samplerHeap) {
-         frameData->samplerHeap->usedItems = 0;
-         mSamplerFrameHeapPool.push_back(frameData->samplerHeap);
-         frameData->samplerHeap = nullptr;
+      frameData->rtvHeaps.clear();
+
+      for (auto &heap : frameData->samplerHeaps) {
+         heap->usedItems = 0;
+         mSamplerFrameHeapPool.push_back(heap);
       }
-      if (frameData->srvHeap) {
-         frameData->srvHeap->usedItems = 0;
-         mSrvFrameHeapPool.push_back(frameData->srvHeap);
-         frameData->srvHeap = nullptr;
+      frameData->samplerHeaps.clear();
+
+      for (auto &heap : frameData->srvHeaps) {
+         heap->usedItems = 0;
+         mSrvFrameHeapPool.push_back(heap);
       }
+      frameData->srvHeaps.clear();
 
       // Free any temporary resources we had
       for (auto &res : frameData->uploadBuffers) {

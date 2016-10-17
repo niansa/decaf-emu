@@ -4,6 +4,8 @@
 
 using namespace latte;
 
+#pragma optimize("", off)
+
 namespace hlsl2
 {
 

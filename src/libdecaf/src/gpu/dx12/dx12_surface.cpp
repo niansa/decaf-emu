@@ -426,18 +426,19 @@ Driver::getSurfaceBuffer(ppcaddr_t baseAddress,
    return &buffer;
 }
 
-void
+D3D12_RESOURCE_STATES
 Driver::transitionSurfaceTexture(SurfaceTexture *surface,
                                  D3D12_RESOURCE_STATES state)
 {
-   if (surface->resourceState == state) {
-      // Already there, nothing to do!
-      return;
+   auto originalState = surface->resourceState;
+
+   if (state != originalState) {
+      mCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+         surface->object.Get(), surface->resourceState, state));
+      surface->resourceState = state;
    }
 
-   mCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
-      surface->object.Get(), surface->resourceState, state));
-   surface->resourceState = state;
+   return originalState;
 }
 
 } // namespace dx12

@@ -36,6 +36,14 @@ void Transpiler::translateAluOp2_ASHR_INT(const ControlFlowInst &cf, const AluIn
    insertDestAssignStmt(cf, group, unit, inst, output);
 }
 
+void Transpiler::translateAluOp2_CEIL(const ControlFlowInst &cf, const AluInstructionGroup &group, SQ_CHAN unit, const AluInst &inst)
+{
+   auto src0 = genSrcVarStr(cf, group, inst, 0);
+
+   auto output = fmt::format("ceil({})", src0);
+   insertDestAssignStmt(cf, group, unit, inst, output);
+}
+
 void Transpiler::translateAluOp2_COS(const ControlFlowInst &cf, const AluInstructionGroup &group, SQ_CHAN unit, const AluInst &inst)
 {
    auto src0 = genSrcVarStr(cf, group, inst, 0);
@@ -49,6 +57,14 @@ void Transpiler::translateAluOp2_EXP_IEEE(const ControlFlowInst &cf, const AluIn
    auto src0 = genSrcVarStr(cf, group, inst, 0);
 
    auto output = fmt::format("exp({})", src0);
+   insertDestAssignStmt(cf, group, unit, inst, output);
+}
+
+void Transpiler::translateAluOp2_FLOOR(const ControlFlowInst &cf, const AluInstructionGroup &group, SQ_CHAN unit, const AluInst &inst)
+{
+   auto src0 = genSrcVarStr(cf, group, inst, 0);
+
+   auto output = fmt::format("floor({})", src0);
    insertDestAssignStmt(cf, group, unit, inst, output);
 }
 
@@ -458,6 +474,14 @@ void Transpiler::translateAluOp2_SUB_INT(const ControlFlowInst &cf, const AluIns
    auto src1 = genSrcVarStr(cf, group, inst, 1);
 
    auto output = fmt::format("{} - {}", src0, src1);
+   insertDestAssignStmt(cf, group, unit, inst, output);
+}
+
+void Transpiler::translateAluOp2_TRUNC(const ControlFlowInst &cf, const AluInstructionGroup &group, SQ_CHAN unit, const AluInst &inst)
+{
+   auto src0 = genSrcVarStr(cf, group, inst, 0);
+
+   auto output = fmt::format("trunc({})", src0);
    insertDestAssignStmt(cf, group, unit, inst, output);
 }
 
